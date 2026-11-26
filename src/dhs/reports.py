@@ -94,6 +94,77 @@ def report_path(out_dir: Path) -> dict:
     return res
 
 
+def report_hedge_vol(out_dir: Path) -> dict:
+    """Which volatility to hedge at. Real NIFTY months as in finding 1 (sold at the implied
+    volatility at the strike), the delta computed at: that implied volatility; NIFTY's last-20-day
+    volatility at the start; EWMA (0.94) at the start; and the month's realised volatility, known
+    only in hindsight. Nothing is fitted, so all months are out of sample; halves shown. Plus a
+    simulation of hedging at the true volatility when it stays constant and when it changes within
+    the month."""
+    from dhs import sim
+    from dhs.real import R, months
+
+    res = {}
+    d = months(r=R)
+    meth = {"pnl": "implied (sold) vol", "pnl_hist20": "last 20 days' vol",
+            "pnl_ewma": "EWMA vol", "pnl_realised": "the month's realised vol (hindsight)"}
+    res["volatility medians"] = "; ".join(
+        f"{k}: sold {g['sold_vol'].median():.1%}, last 20 days {g['vol_hist20'].median():.1%}, "
+        f"EWMA {g['vol_ewma'].median():.1%}, realised {g['realised'].median():.1%}"
+        for k, g in d.groupby("kind"))
+    table = {}
+    for kind, g in d.groupby("kind"):
+        name = "at-the-money call" if kind == "call" else "95% put"
+        for per, m in (("all", g["date"].dt.year > 0), ("2015-2020", g["date"].dt.year <= 2020),
+                       ("2021-2026", g["date"].dt.year >= 2021)):
+            x = g[m]
+            pct = {c: 100 * x[c] / x["F0"] for c in meth}
+            row = {c: (float(pct[c].mean()), float(pct[c].std()), float((x[c] < 0).mean()))
+                   for c in meth}
+            table[(kind, per)] = row
+            key = f"{name}, {per} ({len(x)} months): mean / spread, % of NIFTY; losing months"
+            res[key] = "; ".join(f"{meth[c]} {v[0]:+.3f} / {v[1]:.3f}, {v[2]:.0%}"
+                                 for c, v in row.items())
+
+    F0, T, steps = 25000.0, 30 / 365, 30
+    paths = sim.simulate_paths(F0, 0.13, T, steps, 20000, seed=1)
+    const = {lab: sim.hedge_pnl(paths, F0, T, R, sh, 0.15, "call")["pnl"]
+             for lab, sh in (("implied", 0.15), ("true", 0.13))}
+    z = np.random.default_rng(2).standard_normal((20000, steps))
+    sig = np.r_[np.full(15, 0.08), np.full(15, 0.18)]
+    dt = T / steps
+    lr = -0.5 * sig**2 * dt + sig * np.sqrt(dt) * z
+    paths2 = F0 * np.exp(np.c_[np.zeros(20000), np.cumsum(lr, 1)])
+    avg = float(np.sqrt(np.mean(sig**2)))
+    change = {lab: sim.hedge_pnl(paths2, F0, T, R, sh, 0.15, "call")["pnl"]
+              for lab, sh in (("implied", 0.15), ("true", avg))}
+    res["simulation, 30-day ATM call sold at 15%, hedged daily: spread of hedged P&L (Rs)"] = (
+        f"constant 13% vol: hedged at 15% {np.std(const['implied']):.1f}, at the true 13% "
+        f"{np.std(const['true']):.1f}; vol 8% then 18% (average {avg:.1%}): at 15% "
+        f"{np.std(change['implied']):.1f}, at the average {np.std(change['true']):.1f}"
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.3), sharey=True)
+    cols = [plots.COLORS["hedged"], plots.BLUE_RAMP[2], plots.BLUE_RAMP[5],
+            plots.COLORS["unhedged"]]
+    labels = ["implied\n(sold)", "last\n20 days", "EWMA", "realised\n(hindsight)"]
+    for ax, kind, title in ((axes[0], "call", "At-the-money calls"), (axes[1], "put", "95% puts")):
+        vals = [table[(kind, "all")][c][1] for c in meth]
+        ax.bar(range(4), vals, color=cols)
+        for x, y in enumerate(vals):
+            ax.text(x, y + 0.01, f"{y:.2f}", ha="center", va="bottom", fontsize=9, color=plots.TEXT)
+        ax.set_xticks(range(4), labels)
+        ax.set_title(f"{title}: hedged with the delta at…", fontsize=10.5)
+    axes[0].set_ylabel("spread of monthly hedged P&L,\n% of NIFTY (141 months)")
+    fig.suptitle("Hedging at the implied volatility left the least risk; hindsight's realised "
+                 "volatility left the most", x=0.01, ha="left", fontsize=12, fontweight="semibold")
+    fig.tight_layout()
+    plots.save(fig, out_dir, "hedge_vol")
+    plt.close(fig)
+    return res
+
+
 REPORTS: dict[str, Callable[[Path], dict]] = {
     "path": report_path,
+    "hedge-vol": report_hedge_vol,
 }

@@ -46,27 +46,41 @@ def svi_vol(row, k):
     return math.sqrt(max(w, 1e-12) / row["T"])
 
 
-def hedge_path(F, t, K, T, r, sigma, kind, payoff_price):
-    """Hedged P&L of a short option on one real forward path F at times t (years from the start;
-    t[0] = 0, last t <= T), settled on `payoff_price`; plus the gamma-sum prediction."""
+def hedge_path(F, t, K, T, r, sigma, kind, payoff_price, sigma_hedge=None):
+    """Hedged P&L of a short option sold at `sigma` on one real forward path F at times t (years
+    from the start; t[0] = 0, last t <= T), settled on `payoff_price`, the delta at `sigma_hedge`
+    (default: the sold vol); plus the gamma-sum prediction (at the hedge vol, plus the premium gap
+    when the two vols differ)."""
     F, t = np.asarray(F, float), np.asarray(t, float)
+    sh = sigma if sigma_hedge is None else sigma_hedge
     prem = float(sim.black76(F[0], K, T, r, sigma, kind))
     left = T - t[:-1]
-    d = sim.delta(F[:-1], K, left, r, sigma, kind)
-    g = sim.gamma(F[:-1], K, left, r, sigma)
+    d = sim.delta(F[:-1], K, left, r, sh, kind)
+    g = sim.gamma(F[:-1], K, left, r, sh)
     dF = np.diff(F)
     grow = np.exp(r * (T - t[1:]))
     hedge = float(np.sum(d * dF * grow))
     pay = max(payoff_price - K, 0.0) if kind == "call" else max(K - payoff_price, 0.0)
     pnl = prem * math.exp(r * T) - pay + hedge
     dt = np.diff(t)
-    gsum = float(np.sum(0.5 * g * F[:-1] ** 2 * (sigma**2 * dt - (dF / F[:-1]) ** 2)
+    gsum = float(np.sum(0.5 * g * F[:-1] ** 2 * (sh**2 * dt - (dF / F[:-1]) ** 2)
                         * np.exp(r * (T - t[:-1]))))
+    gsum += (prem - float(sim.black76(F[0], K, T, r, sh, kind))) * math.exp(r * T)
     return pnl, gsum, prem
 
 
+def trailing_vols(nifty: pd.Series, d0) -> dict:
+    """NIFTY's volatility known at the close of d0 (a year of 252 trading days): the last 20 daily
+    log returns, and EWMA (lambda 0.94) of all returns to d0."""
+    r = np.log(nifty.loc[:d0]).diff().dropna()
+    return {"hist20": float(np.sqrt((r.iloc[-20:] ** 2).mean() * 252)),
+            "ewma": float(np.sqrt((r**2).ewm(alpha=0.06, adjust=False).mean().iloc[-1] * 252))}
+
+
 def months(strikes=(("call", 1.0), ("put", 0.95)), r=R) -> pd.DataFrame:
-    """One row per month-end and option: sold vol, realised vol, hedged P&L and its predictions."""
+    """One row per month-end and option: sold vol, realised vol, hedged P&L and its predictions,
+    and the hedged P&L with the delta at other volatilities (`pnl_<name>`): NIFTY's last-20-day
+    and EWMA volatility at the start, and the month's realised volatility (hindsight)."""
     svi = pd.read_parquet(iv_dir() / "data" / "derived" / "svi_daily.parquet")
     svi = svi[svi["converged"]]
     nifty = pd.read_parquet(lake_dir() / "market.parquet").set_index("date")["nifty"].dropna()
@@ -98,7 +112,12 @@ def months(strikes=(("call", 1.0), ("put", 0.95)), r=R) -> pd.DataFrame:
             pnl, gsum, prem = hedge_path(Fp, tp, K, T, r, vol, kind, settle)
             gap = (prem - float(sim.black76(F[0], K, T, r, realised, kind))) * math.exp(r * T)
             pay = max(settle - K, 0.0) if kind == "call" else max(K - settle, 0.0)
-            rows.append({"date": d0, "expiry": exp, "kind": kind, "moneyness": m, "F0": F[0],
+            alt = trailing_vols(nifty, d0) | {"realised": realised}
+            extra = {f"pnl_{nm}": hedge_path(Fp, tp, K, T, r, vol, kind, settle, sh)[0]
+                     for nm, sh in alt.items()}
+            extra |= {f"vol_{nm}": sh for nm, sh in alt.items() if nm != "realised"}
+            rows.append({**extra, "date": d0, "expiry": exp, "kind": kind, "moneyness": m,
+                         "F0": F[0],
                          "K": K, "T": T, "sold_vol": vol, "realised": realised, "premium": prem,
                          "pnl": pnl, "gamma_sum": gsum, "vol_gap": gap,
                          "unhedged": prem * math.exp(r * T) - pay, "days": len(path)})

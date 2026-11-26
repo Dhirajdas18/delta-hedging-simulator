@@ -16,7 +16,7 @@ hedges; all computed in the browser.
 ## Features
 
 - [x] Why hedged P&L depends on the path: gamma times the gap between implied and realised variance
-- [ ] Which volatility to hedge at: implied, realised or a forecast
+- [x] Which volatility to hedge at: implied, realised or a forecast
 - [ ] When to rebalance: fixed times against delta bands, after Indian trading costs
 - [ ] What the close can't hedge: overnight gaps and jumps
 - [ ] Gamma hedging with a second option
@@ -54,12 +54,36 @@ price at the sold volatility minus at the month's realised volatility) and the d
   NIFTY a month with a spread of 0.48%, against a 2.60% spread unhedged; the put +0.07% with 0.47%
   against 1.70%.
 
+### 2. Hedging at the implied volatility left the least risk; knowing the realised volatility didn't help
+
+<a href="docs/img/hedge_vol.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/hedge_vol.png"><img src="docs/img/hedge_vol.gif" alt="Spread of monthly hedged P&L for NIFTY calls and puts hedged with the delta at the implied, last-20-day, EWMA and hindsight realised volatility" width="720"></picture></a>
+
+Finding 1's months again: each option is sold at its implied volatility, and only the delta used to
+hedge changes. The delta is computed at the implied volatility the option was sold at; at NIFTY's
+volatility over the last 20 trading days; at EWMA volatility (λ 0.94), both known at the start; or
+at the month's realised volatility, which is known only afterwards. Nothing is fitted, so every
+month is out of sample. A simulation (30-day at-the-money call sold at 15%, hedged daily) checks
+hedging at the true volatility when it stays at 13% and when it runs at 8% then 18%.
+
+- **The implied volatility gave the steadiest result.** Monthly hedged P&L had a spread of 0.48% of
+  NIFTY for at-the-money calls with the implied volatility, 0.53% with either trailing volatility and
+  0.71% with the realised; for 95% puts, 0.47%, 0.49%, 0.49% and 0.57%.
+- **Hindsight didn't help, even in simulation.** With volatility constant at 13%, hedging at the
+  true 13% left a spread of ₹58.5 against ₹61.8 at 15%; when it ran at 8% then 18%, hedging at the
+  month's average left more, ₹84.0 against ₹79.8.
+- **The halves mostly agreed.** For calls the implied volatility gave the smallest spread in both
+  2015–2020 (0.56% against 0.90% for the realised) and 2021–2026 (0.40% against 0.44%). For puts in
+  2021–2026 the realised was slightly smaller (0.33% against 0.36%).
+- **A lower hedge volatility raised the puts' average.** The 95% put sold at a median 16.8% averaged
+  +0.067% of NIFTY a month hedged at that volatility and +0.090% to +0.118% hedged at the lower
+  trailing or realised volatilities (medians 12.1%–12.7%), with a wider spread.
+
 ## Quick start
 
 ```bash
 uv sync
 uv run dhs report <topic>               # a study's numbers and charts -> out/
-                                        # (topics: path)
+                                        # (topics: path, hedge-vol)
 uv run python scripts/build_site.py     # hedging simulator -> site/index.html (code only, no data)
 uv run pytest
 ```
@@ -71,7 +95,8 @@ The simulator and the tests need no market data; the tests of the browser maths 
 - `src/dhs/real.py`: real NIFTY months from implied-vol-surface's local data (`DHS_IV_DIR`) and
   NIFTY's close from the NSE bhavcopy archive (`DHS_LAKE_DIR` or `IV_LAKE_DIR`): sell at the SVI
   volatility at the strike, hedge at every close with the expiry's futures, and the volatility-gap
-  and gamma-sum predictions. Nothing from NSE is committed.
+  and gamma-sum predictions, with the delta at the sold, trailing or realised volatility. Nothing from
+  NSE is committed.
 - `src/dhs/sim.py`: the core maths in numpy (scipy only for the normal CDF): Black-76 price,
   delta, gamma and vega on a forward; forward paths as geometric Brownian motion with drift
   −σ²/2 in logs, with optional Merton jumps compensated so the forward stays a martingale; and
