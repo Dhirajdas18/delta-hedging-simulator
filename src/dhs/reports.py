@@ -429,10 +429,85 @@ def report_gamma(out_dir: Path) -> dict:
     return res
 
 
+def report_stocks(out_dir: Path) -> dict:
+    """Single-stock options (dhs.stocks): at each month-end, every F&O stock's 1-month at-the-money
+    call sold at its own implied volatility and hedged at each close until expiry, against
+    finding 1's NIFTY calls; results by the size of the month's largest daily move. Nothing is
+    fitted; halves shown. Needs DHS_IV_DIR (stock options) and the lake (prices, symbol changes)."""
+    import pandas as pd
+
+    from dhs.real import R, months
+    from dhs.stocks import atm_cases, hedge_months
+
+    res = {}
+    h = hedge_months(atm_cases(R), R)
+    n = months(r=R)
+    n = n[n["kind"] == "call"].assign(pnl=lambda x: 100 * x["pnl"] / x["F0"],
+                                      unhedged=lambda x: 100 * x["unhedged"] / x["F0"],
+                                      gamma_sum=lambda x: 100 * x["gamma_sum"] / x["F0"])
+    res["stock-months"] = (
+        f"{len(h):,} on {h['date'].nunique()} month-ends, {h['symbol'].nunique()} stocks; sold "
+        f"volatility median {h['vol'].median():.1%} (NIFTY {n['sold_vol'].median():.1%}); sold "
+        f"against the month's realised volatility, median ratio "
+        f"{(h['vol'] / h['realised']).median():.2f}"
+    )
+    for lab, x in (("stocks", h), ("NIFTY", n)):
+        halves = x.groupby(x["date"].dt.year <= 2020)["pnl"].mean()
+        r2 = np.corrcoef(x["pnl"], x["gamma_sum"])[0, 1] ** 2
+        res[f"{lab}: hedged at-the-money call, % of the price a month"] = (
+            f"mean {x['pnl'].mean():+.3f} (2015-2020 {halves[True]:+.3f}, 2021-2026 "
+            f"{halves[False]:+.3f}), median {x['pnl'].median():+.3f}, spread {x['pnl'].std():.3f}, "
+            f"mean / spread {x['pnl'].mean() / x['pnl'].std():.2f}; unhedged spread "
+            f"{x['unhedged'].std():.2f}; gamma sum explains {r2:.0%}; losing months "
+            f"{(x['pnl'] < 0).mean():.0%}"
+        )
+    bins = [0, 0.03, 0.05, 0.08, 1]
+    labels = ["under 3%", "3-5%", "5-8%", "over 8%"]
+    g = h.groupby(pd.cut(h["max_move"], bins, labels=labels), observed=True)["pnl"]
+    tab = g.agg(["size", "mean", "std"])
+    res["stocks by the month's largest daily move"] = "; ".join(
+        f"{k}: {int(r_['size']):,} months ({r_['size'] / len(h):.0%}), mean {r_['mean']:+.2f}%, "
+        f"spread {r_['std']:.2f}%" for k, r_ in tab.iterrows())
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.3))
+    ax = axes[0]
+    vals = [[n["pnl"].mean(), h["pnl"].mean()], [n["pnl"].std(), h["pnl"].std()]]
+    xs = np.arange(2)
+    for j, (lab, col) in enumerate((("NIFTY", plots.COLORS["hedged"]),
+                                    ("single stocks", plots.COLORS["unhedged"]))):
+        v = [vals[0][j], vals[1][j]]
+        ax.bar(xs + (j - 0.5) * 0.38, v, 0.38, color=col, label=lab)
+        for x, y in zip(xs + (j - 0.5) * 0.38, v, strict=True):
+            ax.text(x, y + 0.03, f"{y:.2f}", ha="center", va="bottom", fontsize=9, color=plots.TEXT)
+    ax.set_xticks(xs, ["average month", "spread of months"])
+    ax.set_ylabel("hedged short ATM call,\n% of the price a month")
+    ax.legend(fontsize=9, loc="upper left")
+    ax.set_title("Stocks paid more, with three times the risk", fontsize=10.5)
+    ax = axes[1]
+    ax.bar(range(len(tab)), tab["mean"], color=[plots.COLORS["hedged"] if v >= 0 else
+                                               plots.COLORS["unhedged"] for v in tab["mean"]])
+    for x, (v, size) in enumerate(zip(tab["mean"], tab["size"], strict=True)):
+        ax.text(x, v + (0.05 if v >= 0 else -0.05), f"{v:+.2f}\n({size / len(h):.0%} of months)",
+                ha="center", va="bottom" if v >= 0 else "top", fontsize=8.5, color=plots.TEXT)
+    ax.axhline(0, color=plots.TEXT_2, lw=0.8)
+    ax.set_xticks(range(len(tab)), list(tab.index))
+    ax.set_xlabel("the stock's largest one-day move that month")
+    ax.set_ylabel("average hedged P&L, % of the price")
+    ax.set_ylim(min(tab["mean"]) - 0.6, max(tab["mean"]) + 0.5)
+    ax.set_title("One big day turned the month into a loss", fontsize=10.5)
+    fig.suptitle("Hedged single-stock options earned more than NIFTY's but were ruled by jump days",
+                 x=0.01, ha="left", fontsize=12, fontweight="semibold")
+    fig.tight_layout()
+    plots.save(fig, out_dir, "stocks")
+    plt.close(fig)
+    return res
+
+
 REPORTS: dict[str, Callable[[Path], dict]] = {
     "path": report_path,
     "hedge-vol": report_hedge_vol,
     "rebalance": report_rebalance,
     "gaps": report_gaps,
     "gamma": report_gamma,
+    "stocks": report_stocks,
 }

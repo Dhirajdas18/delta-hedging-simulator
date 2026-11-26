@@ -20,7 +20,7 @@ hedges; all computed in the browser.
 - [x] When to rebalance: fixed times against delta bands, after Indian trading costs
 - [x] What the close can't hedge: overnight gaps and jumps
 - [x] Gamma hedging with a second option
-- [ ] Hedging single-stock options against NIFTY
+- [x] Hedging single-stock options against NIFTY
 - [ ] Is selling and hedging options an edge after costs and gaps
 
 ## Findings
@@ -152,13 +152,34 @@ the two gammas, so nothing is fitted.
   correlation of −0.32: the gamma-hedged book lost in different months, most in the month from the
   end of March 2020 (−2.24%, when futures only made +1.95%).
 
+### 6. Hedged single-stock options earned more than NIFTY's, with three times the risk, and were ruled by jump days
+
+<a href="docs/img/stocks.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/stocks.png"><img src="docs/img/stocks.gif" alt="Average and spread of monthly hedged P&L for NIFTY and single-stock at-the-money calls; average stock hedged P&L by the size of the month's largest one-day move" width="720"></picture></a>
+
+At each month-end, every F&O stock's monthly expiry 15–45 days out gives a forward (the stock
+future's settlement price) and an at-the-money strike (the one nearest it with a traded call and
+put); the call is sold at the mean of their implied volatilities and hedged at every close with the
+stock's split-adjusted price, scaled to the forward, until expiry (carry over the month ignored).
+Option symbols are mapped to the company's current symbol before prices are looked up. That gives
+24,390 stock-months on 141 month-ends (349 stocks), set against finding 1's NIFTY calls; grouping
+months by their largest one-day move is done after the fact, to see what drove the result.
+
+- **Stocks paid more per month.** Sold at a median 33.0% volatility (NIFTY 14.0%), 1.16 times what
+  followed, the hedged stock call made +0.37% of the price a month (2015–2020 +0.43%, 2021–2026
+  +0.33%) against +0.12% for NIFTY.
+- **With three times the risk.** The monthly spread was 1.42% against 0.48%, so the return per unit
+  of spread was about the same (0.26 against 0.25); a third of months lost money in both.
+- **One big day decided the month.** In the 10% of stock-months with a one-day move over 8% the
+  hedged call lost −1.17% on average; with the largest move under 3% it made +0.99%. The day-by-day
+  gamma formula explained 68% of the stocks' monthly results, against 85% for NIFTY.
+
 ## Quick start
 
 ```bash
 uv sync
 uv run dhs report <topic>               # a study's numbers and charts -> out/
                                         # (topics: path, hedge-vol, rebalance, gaps,
-                                        #  gamma)
+                                        #  gamma, stocks)
 uv run python scripts/build_site.py     # hedging simulator -> site/index.html (code only, no data)
 uv run pytest
 ```
@@ -179,6 +200,9 @@ The simulator and the tests need no market data; the tests of the browser maths 
 - `src/dhs/gamma.py`: the short call hedged with futures only or with the next monthly expiry's
   call (static or re-set daily), back option priced from its own smile, Indian futures and option
   costs and a 1-point option spread.
+- `src/dhs/stocks.py`: at-the-money implied volatility of every F&O stock at month-ends from the
+  option and futures closes, current-symbol mapping, and the monthly sold-and-hedged calls on
+  split-adjusted prices.
 - `src/dhs/sim.py`: the core maths in numpy (scipy only for the normal CDF): Black-76 price,
   delta, gamma and vega on a forward; forward paths as geometric Brownian motion with drift
   −σ²/2 in logs, with optional Merton jumps compensated so the forward stays a martingale; and
