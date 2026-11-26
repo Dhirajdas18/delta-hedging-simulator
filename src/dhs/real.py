@@ -122,3 +122,35 @@ def months(strikes=(("call", 1.0), ("put", 0.95)), r=R) -> pd.DataFrame:
                          "pnl": pnl, "gamma_sum": gsum, "vol_gap": gap,
                          "unhedged": prem * math.exp(r * T) - pay, "days": len(path)})
     return pd.DataFrame(rows)
+
+
+def month_cases(strikes=(("call", 1.0), ("put", 0.95))) -> list[dict]:
+    """The real month cases of `months` as raw inputs (path, times, strike, vol, settle), for
+    studies that re-run the hedge with other rules."""
+    svi = pd.read_parquet(iv_dir() / "data" / "derived" / "svi_daily.parquet")
+    svi = svi[svi["converged"]]
+    nifty = pd.read_parquet(lake_dir() / "market.parquet").set_index("date")["nifty"].dropna()
+    dates = pd.DatetimeIndex(sorted(svi["date"].unique()))
+    ends = pd.Series(dates, index=dates).groupby([dates.year, dates.month]).max()
+    out = []
+    for d0 in ends:
+        g = svi[(svi["date"] == d0) & svi["monthly"] & svi["days"].between(20, 45)]
+        if g.empty:
+            continue
+        s0 = g.sort_values("days").iloc[0]
+        exp = s0["expiry"]
+        path = svi[(svi["expiry"] == exp) & (svi["date"] >= d0)].sort_values("date")
+        if exp not in nifty.index or len(path) < 10:
+            continue
+        T = float(s0["T"])
+        t = ((path["date"] - d0).dt.days / 365).to_numpy()
+        if t[-1] > T:
+            continue
+        settle = float(nifty.loc[exp])
+        F = np.r_[path["F"].to_numpy(), settle]
+        tt = np.r_[t, T]
+        for kind, m in strikes:
+            K = float(s0["F"]) * m
+            out.append({"date": d0, "kind": kind, "F": F, "t": tt, "T": T, "K": K,
+                        "vol": svi_vol(s0, math.log(K / s0["F"])), "settle": settle})
+    return out

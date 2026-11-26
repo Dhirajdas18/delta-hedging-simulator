@@ -164,7 +164,91 @@ def report_hedge_vol(out_dir: Path) -> dict:
     return res
 
 
+def report_rebalance(out_dir: Path) -> dict:
+    """When to rebalance, after Indian futures costs at today's rates (dhs.rebalance): fixed
+    times, delta bands, Whalley-Wilmott bands and Leland's cost-adjusted volatility, on finding 1's
+    real NIFTY months. Each rule's setting is chosen on 2015-2020 as the cheapest one whose spread
+    of monthly hedged P&L is no wider than daily hedging's (or, if none is, the one closest), then
+    scored on 2021-2026."""
+    import pandas as pd
+
+    from dhs.real import R, month_cases
+    from dhs.rebalance import hedge_rule
+
+    res = {}
+    grid = ([("time", k) for k in (1, 2, 3, 5, 10)]
+            + [("band", h) for h in (0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.2)]
+            + [("ww", a) for a in (3e-4, 1e-3, 3e-3, 0.01, 0.03, 0.1, 0.3, 1.0)]
+            + [("leland", 0.0)])
+    rows = []
+    for c in month_cases():
+        for rule, par in grid:
+            pnl, cost, trades = hedge_rule(c["F"], c["t"], c["K"], c["T"], R, c["vol"], c["kind"],
+                                           c["settle"], rule, par)
+            rows.append({"date": c["date"], "kind": c["kind"], "rule": rule, "param": par,
+                         "pnl": 100 * pnl / c["F"][0], "cost": 100 * cost / c["F"][0],
+                         "trades": trades})
+    d = pd.DataFrame(rows)
+    d["half"] = np.where(d["date"].dt.year <= 2020, "train", "test")
+    agg = d.groupby(["kind", "half", "rule", "param"]).agg(
+        mean=("pnl", "mean"), sd=("pnl", "std"), cost=("cost", "mean"), trades=("trades", "mean"))
+    names = {"time": "every k days", "band": "delta band", "ww": "Whalley-Wilmott",
+             "leland": "Leland (daily)"}
+    chosen = {}
+    for kind in ("call", "put"):
+        tr = agg.loc[(kind, "train")]
+        te = agg.loc[(kind, "test")]
+        ref_tr, ref_te = tr.loc[("time", 1.0)], te.loc[("time", 1.0)]
+        label = "at-the-money call" if kind == "call" else "95% put"
+        res[f"{label}, daily hedging"] = (
+            f"2015-2020: spread {ref_tr['sd']:.3f}%, cost {ref_tr['cost']:.4f}% of NIFTY a month, "
+            f"{ref_tr['trades']:.0f} trades; 2021-2026: spread {ref_te['sd']:.3f}%, cost "
+            f"{ref_te['cost']:.4f}%"
+        )
+        for rule in ("time", "band", "ww", "leland"):
+            opts = tr.loc[rule]
+            ok = opts[opts["sd"] <= ref_tr["sd"]]
+            par = ok["cost"].idxmin() if len(ok) else (opts["sd"] - ref_tr["sd"]).abs().idxmin()
+            chosen[(kind, rule)] = par
+            a, b = tr.loc[(rule, par)], te.loc[(rule, par)]
+            res[f"  {label}, {names[rule]} (setting {par:g}, chosen on 2015-2020)"] = (
+                f"2015-2020 spread {a['sd']:.3f}%, cost {a['cost']:.4f}%; 2021-2026 spread "
+                f"{b['sd']:.3f}% ({100 * (b['sd'] / ref_te['sd'] - 1):+.1f}% vs daily), cost "
+                f"{b['cost']:.4f}% ({100 * (b['cost'] / ref_te['cost'] - 1):+.1f}%), "
+                f"{b['trades']:.1f} trades, mean after costs {b['mean']:+.3f}%"
+            )
+        k5 = tr.loc[("band", 0.05)]
+        k2 = tr.loc[("time", 2.0)]
+        res[f"  {label}: a band of 0.05 against trading every 2 days (2015-2020)"] = (
+            f"spread {k5['sd']:.3f}% vs {k2['sd']:.3f}%, "
+            f"cost {k5['cost']:.4f}% vs {k2['cost']:.4f}%")
+
+    full = d.groupby(["kind", "rule", "param"]).agg(sd=("pnl", "std"), cost=("cost", "mean"))
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.4), sharey=False)
+    cols = {"time": plots.MUTED, "band": plots.COLORS["hedged"], "ww": plots.SERIES[3],
+            "leland": plots.COLORS["unhedged"]}
+    for ax, kind, title in ((axes[0], "call", "At-the-money calls"), (axes[1], "put", "95% puts")):
+        for rule in ("time", "band", "ww", "leland"):
+            g = full.loc[(kind, rule)].sort_values("cost")
+            ax.plot(g["cost"], g["sd"], color=cols[rule], lw=2, marker="o", ms=5,
+                    label=names[rule])
+            p = chosen[(kind, rule)]
+            ax.scatter([full.loc[(kind, rule, p), "cost"]], [full.loc[(kind, rule, p), "sd"]],
+                       s=110, facecolors="none", edgecolors=plots.TEXT, lw=1.4, zorder=5)
+        ax.set_xlabel("average hedging cost, % of NIFTY a month")
+        ax.set_title(title, fontsize=10.5)
+    axes[0].set_ylabel("spread of monthly hedged P&L,\n% of NIFTY (2015-2026)")
+    axes[0].legend(fontsize=8.5, loc="upper right")
+    fig.suptitle("Trading when the hedge drifts beat trading on a timetable (circled: settings "
+                 "chosen on 2015-2020)", x=0.01, ha="left", fontsize=12, fontweight="semibold")
+    fig.tight_layout()
+    plots.save(fig, out_dir, "rebalance")
+    plt.close(fig)
+    return res
+
+
 REPORTS: dict[str, Callable[[Path], dict]] = {
     "path": report_path,
     "hedge-vol": report_hedge_vol,
+    "rebalance": report_rebalance,
 }

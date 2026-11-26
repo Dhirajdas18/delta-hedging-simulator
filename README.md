@@ -17,7 +17,7 @@ hedges; all computed in the browser.
 
 - [x] Why hedged P&L depends on the path: gamma times the gap between implied and realised variance
 - [x] Which volatility to hedge at: implied, realised or a forecast
-- [ ] When to rebalance: fixed times against delta bands, after Indian trading costs
+- [x] When to rebalance: fixed times against delta bands, after Indian trading costs
 - [ ] What the close can't hedge: overnight gaps and jumps
 - [ ] Gamma hedging with a second option
 - [ ] Hedging single-stock options against NIFTY
@@ -78,12 +78,38 @@ hedging at the true volatility when it stays at 13% and when it runs at 8% then 
   +0.067% of NIFTY a month hedged at that volatility and +0.090% to +0.118% hedged at the lower
   trailing or realised volatilities (medians 12.1%–12.7%), with a wider spread.
 
+### 3. Trading when the hedge drifts beat trading on a timetable, but saved only a little against daily hedging
+
+<a href="docs/img/rebalance.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/rebalance.png"><img src="docs/img/rebalance.gif" alt="Spread of monthly hedged P&L against average hedging cost for time, delta-band, Whalley-Wilmott and Leland rebalancing rules, NIFTY calls and puts, with the settings chosen on 2015-2020 circled" width="720"></picture></a>
+
+Finding 1's months are hedged again at the daily closes, now paying for every futures trade at
+today's Indian rates (from 1 April 2026, applied to every year): STT 0.05% of the sale value, NSE
+and SEBI charges, stamp duty on purchases, ₹20 brokerage an order and GST, for a book of 10 lots
+(650 units of NIFTY); no lot rounding and no bid-ask spread. Four kinds of rule decide when to
+trade: every k trading days; whenever the hedge has drifted from the target delta by more than a
+band; a Whalley-Wilmott band, which widens with costs and narrows with gamma, trading only to its
+edge; and Leland's daily hedge with a cost-raised volatility. Each rule's setting is the cheapest
+one whose 2015–2020 spread of monthly hedged P&L is no wider than daily hedging's (or the closest
+if none is), and is then scored on 2021–2026.
+
+- **Daily hedging cost about 0.04% of NIFTY a month.** For the at-the-money call, 0.0405% in
+  2015–2020 and 0.0363% in 2021–2026 (18 trades a month); for the 95% put, 0.029% and 0.022%.
+- **Bands beat timetables.** In 2015–2020 a band of 0.05 delta left a spread of 0.575% of NIFTY for
+  0.034% of cost; trading every second day left 0.831% for 0.029%. For puts, 0.605% against 0.671%
+  at the same cost.
+- **Against daily hedging the saving was small.** Out of sample, the chosen delta band cut the
+  call's hedging cost by 7.4% (0.034% against 0.036% of NIFTY) with the same spread; Whalley-Wilmott
+  cut it by 13.4% for a 2.2% wider spread; for puts, by 7.9% and 11.6% (the latter with a 2.3%
+  narrower spread). Leland's volatility changed almost nothing (cost −1.2% calls, +1.0% puts).
+- **Costs took about a quarter of the hedged profit.** In 2021–2026 daily hedging costs took the
+  call's +0.135% of NIFTY a month (finding 2) to +0.099%, and the put's +0.079% to +0.057%.
+
 ## Quick start
 
 ```bash
 uv sync
 uv run dhs report <topic>               # a study's numbers and charts -> out/
-                                        # (topics: path, hedge-vol)
+                                        # (topics: path, hedge-vol, rebalance)
 uv run python scripts/build_site.py     # hedging simulator -> site/index.html (code only, no data)
 uv run pytest
 ```
@@ -97,6 +123,8 @@ The simulator and the tests need no market data; the tests of the browser maths 
   volatility at the strike, hedge at every close with the expiry's futures, and the volatility-gap
   and gamma-sum predictions, with the delta at the sold, trailing or realised volatility. Nothing from
   NSE is committed.
+- `src/dhs/rebalance.py`: NIFTY futures costs at today's Indian rates and the time, delta-band,
+  Whalley-Wilmott and Leland rebalancing rules on real month paths.
 - `src/dhs/sim.py`: the core maths in numpy (scipy only for the normal CDF): Black-76 price,
   delta, gamma and vega on a forward; forward paths as geometric Brownian motion with drift
   −σ²/2 in logs, with optional Merton jumps compensated so the forward stays a martingale; and
