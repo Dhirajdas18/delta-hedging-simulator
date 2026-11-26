@@ -72,7 +72,6 @@ The simulator and the tests need no market data; the tests of the browser maths 
   NIFTY's close from the NSE bhavcopy archive (`DHS_LAKE_DIR` or `IV_LAKE_DIR`): sell at the SVI
   volatility at the strike, hedge at every close with the expiry's futures, and the volatility-gap
   and gamma-sum predictions. Nothing from NSE is committed.
-- `src/dhs/reports.py`: README findings, reproducible with `dhs report <topic>`.
 - `src/dhs/sim.py`: the core maths in numpy (scipy only for the normal CDF): Black-76 price,
   delta, gamma and vega on a forward; forward paths as geometric Brownian motion with drift
   −σ²/2 in logs, with optional Merton jumps compensated so the forward stays a martingale; and
