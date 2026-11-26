@@ -13,7 +13,7 @@ Rules, all deciding at each trading day's close:
 - band: rebalance to the target when |target - held| > h;
 - Whalley-Wilmott: rebalance to the nearer edge of a band of half-width
   (1.5 e^{-r tau} lambda F Gamma^2 / A)^{1/3}, lambda the one-way cost rate, A a risk-aversion
-  setting; gamma-heavy positions get narrow bands, cheap trading narrow bands;
+  setting; the band widens with costs and with gamma (it grows as Gamma^{2/3});
 - Leland: rebalance every day, at a delta computed with sigma^2 (1 + Le),
   Le = sqrt(2/pi) k / (sigma sqrt(dt)), k the round-trip cost rate (a short option raises it).
 """

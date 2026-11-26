@@ -39,7 +39,7 @@ def hedge_twice(F, t, gap, K, T, r, sigma, kind, settle):
         left = T - t[i]
         d_close = float(sim.delta(F[i], K, left, r, sigma, kind))
         f_open = F[i] * gap[i]
-        t_open = t[i] + min(1 / 365, 0.5 * (t[i + 1] - t[i]))  # the next morning
+        t_open = max(t[i], t[i + 1] - 0.25 / 365)  # next trading day's open, ~6 h before close
         d_open = float(sim.delta(f_open, K, max(T - t_open, 1e-8), r, sigma, kind))
         hedge += d_close * (f_open - F[i]) * math.exp(r * (T - t_open))
         hedge += d_open * (F[i + 1] - f_open) * math.exp(r * (T - t[i + 1]))

@@ -155,7 +155,7 @@ def report_hedge_vol(out_dir: Path) -> dict:
             ax.text(x, y + 0.01, f"{y:.2f}", ha="center", va="bottom", fontsize=9, color=plots.TEXT)
         ax.set_xticks(range(4), labels)
         ax.set_title(f"{title}: hedged with the delta at…", fontsize=10.5)
-    axes[0].set_ylabel("spread of monthly hedged P&L,\n% of NIFTY (141 months)")
+    axes[0].set_ylabel(f"spread of monthly hedged P&L,\n% of NIFTY ({d['date'].nunique()} months)")
     fig.suptitle("Hedging at the implied volatility left the least risk; hindsight's realised "
                  "volatility left the most", x=0.01, ha="left", fontsize=12, fontweight="semibold")
     fig.tight_layout()
@@ -178,7 +178,7 @@ def report_rebalance(out_dir: Path) -> dict:
     res = {}
     grid = ([("time", k) for k in (1, 2, 3, 5, 10)]
             + [("band", h) for h in (0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.2)]
-            + [("ww", a) for a in (3e-4, 1e-3, 3e-3, 0.01, 0.03, 0.1, 0.3, 1.0)]
+            + [("ww", a) for a in (3e-4, 1e-3, 3e-3, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0)]
             + [("leland", 0.0)])
     rows = []
     for c in month_cases():
@@ -409,7 +409,7 @@ def report_gamma(out_dir: Path) -> dict:
     ax.set_ylabel("hedged P&L after costs,\n% of NIFTY a month")
     ax.set_ylim(-1.15, 0.4)
     ax.legend(fontsize=8.5, loc="upper right")
-    ax.set_title("It cost the average, not the worst months", fontsize=10.5)
+    ax.set_title("It cost the average and the worst months", fontsize=10.5)
     ax = axes[1]
     ax.scatter(w["futures"], w["dynamic"], s=16, color=plots.COLORS["hedged"], alpha=0.7, lw=0)
     lim = float(np.nanmax(np.abs(w[["futures", "dynamic"]].to_numpy()))) * 1.08

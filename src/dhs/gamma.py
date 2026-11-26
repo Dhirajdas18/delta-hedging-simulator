@@ -19,10 +19,8 @@ same for every method and left out.
 
 import math
 
-import pandas as pd
-
 from dhs import sim
-from dhs.real import R, iv_dir, lake_dir, svi_vol
+from dhs.real import R, svi_vol
 from dhs.rebalance import trade_cost
 
 OPT_NSE, OPT_SEBI, OPT_STAMP, OPT_STT, GST, ORDER = 0.0003553, 0.000001, 0.00003, 0.0015, 0.18, 20.0
@@ -40,55 +38,69 @@ def option_cost(units, premium):
 
 
 def month_pairs() -> list[dict]:
-    """Front and back monthly slices for each month-end, aligned by date."""
-    svi = pd.read_parquet(iv_dir() / "data" / "derived" / "svi_daily.parquet")
-    svi = svi[svi["converged"]]
-    nifty = pd.read_parquet(lake_dir() / "market.parquet").set_index("date")["nifty"].dropna()
-    dates = pd.DatetimeIndex(sorted(svi["date"].unique()))
+    """Each month-end: the front path over every trading day to expiry (`real.forward_path`),
+    the back expiry's latest slice on or before each day, and the back slice on the settlement
+    day itself (it exists: the back expiry is still a month away)."""
+    from dhs.real import forward_path, load, month_ends
+
+    svi, nifty = load()
     out = []
-    for d0 in pd.Series(dates, index=dates).groupby([dates.year, dates.month]).max():
+    for d0 in month_ends(svi):
         g = svi[(svi["date"] == d0) & svi["monthly"]].sort_values("days")
         front = g[g["days"].between(20, 45)]
         if front.empty:
             continue
         f0 = front.iloc[0]
         back = g[g["expiry"] > f0["expiry"]]
-        if back.empty or f0["expiry"] not in nifty.index:
+        if back.empty:
             continue
         b0 = back.iloc[0]
-        fp = svi[(svi["expiry"] == f0["expiry"]) & (svi["date"] >= d0)].set_index("date")
-        bp = svi[(svi["expiry"] == b0["expiry"]) & (svi["date"] >= d0)].set_index("date")
-        days = fp.index.intersection(bp.index)
-        if len(days) < 10 or days[0] != d0 or days[-1] >= f0["expiry"]:
+        fp = forward_path(svi[(svi["expiry"] == f0["expiry"]) & (svi["date"] >= d0)], nifty, d0,
+                          f0["expiry"])
+        if fp is None:
             continue
-        out.append({"date": d0, "front": fp.loc[days], "back": bp.loc[days],
-                    "expiry": f0["expiry"], "settle": float(nifty.loc[f0["expiry"]]),
-                    "back_last": bp.loc[days[-1]]})
+        days, F1, sd, settle, _ = fp
+        bs = svi[(svi["expiry"] == b0["expiry"]) & (svi["date"] >= d0)].set_index("date")
+        bs = bs.sort_index()
+        if d0 not in bs.index or sd not in bs.index:
+            continue
+        # latest back slice on or before each day (rolled to the day in run_month)
+        idx = bs.index.searchsorted(days, side="right") - 1
+        out.append({"date": d0, "days": days, "F1": F1, "T1": float(f0["T"]),
+                    "K": float(f0["F"]), "vol1": svi_vol(f0, 0.0), "settle": settle,
+                    "back": bs.iloc[idx].reset_index(),  # keeps each slice's own date
+                    "back_exp": b0["expiry"], "back_settle": bs.loc[sd], "settle_day": sd})
     return out
+
+
+def _back(row, day, back_exp, F1_now, F1_then):
+    """The back option's forward, time and SVI row on `day`, from a slice taken on or before it:
+    time recomputed to the day, forward moved with the front forward."""
+    T2 = max((back_exp - day).days / 365, 1e-6)
+    return float(row["F"]) * F1_now / F1_then, T2
 
 
 def run_month(m, method="futures", r=R):
     """Hedged P&L (Rs per unit of NIFTY, at the front expiry) and costs for one month."""
-    f, b = m["front"], m["back"]
-    d0 = m["date"]
-    K = float(f["F"].iloc[0])
-    T1 = float(f["T"].iloc[0])
-    t = ((f.index - d0).days / 365).to_numpy()
-    vol1 = svi_vol(f.iloc[0], 0.0)  # sold at-the-money vol, held for the hedge (finding 2)
-    prem = float(sim.black76(K, K, T1, r, vol1, "call"))
+    d0, K, T1, vol1 = m["date"], m["K"], m["T1"], m["vol1"]
+    days, F1 = m["days"], m["F1"]
+    t = ((days - d0).days / 365).to_numpy()
+    prem = float(sim.black76(F1[0], K, T1, r, vol1, "call"))
     grow = lambda tt: math.exp(r * (T1 - tt))  # noqa: E731
     cash = prem * grow(0.0)
     held_fut, held_opt, cost = 0.0, 0.0, 0.0
-    n_days = len(f)
-    for i in range(n_days):
-        F1, F2 = float(f["F"].iloc[i]), float(b["F"].iloc[i])
-        T1i, T2i = T1 - t[i], float(b["T"].iloc[i])
-        s2 = svi_vol(b.iloc[i], math.log(K / F2))
+    f1_at = dict(zip(days, F1, strict=True))
+    for i, day in enumerate(days):
+        brow = m["back"].iloc[i]
+        then = brow["date"] if "date" in brow else day
+        F2, T2i = _back(brow, day, m["back_exp"], F1[i], f1_at.get(then, F1[i]))
+        s2 = svi_vol(brow, math.log(K / F2)) if T2i > 0 else vol1
         p2 = float(sim.black76(F2, K, T2i, r, s2, "call"))
-        g1 = float(sim.gamma(F1, K, T1i, r, vol1))
-        g2 = float(sim.gamma(F2, K, T2i, r, s2)) * (F2 / F1) ** 2
-        d1 = float(sim.delta(F1, K, T1i, r, vol1, "call"))
-        d2 = float(sim.delta(F2, K, T2i, r, s2, "call")) * (F2 / F1)
+        T1i = T1 - t[i]
+        g1 = float(sim.gamma(F1[i], K, T1i, r, vol1))
+        g2 = float(sim.gamma(F2, K, T2i, r, s2)) * (F2 / F1[i]) ** 2
+        d1 = float(sim.delta(F1[i], K, T1i, r, vol1, "call"))
+        d2 = float(sim.delta(F2, K, T2i, r, s2, "call")) * (F2 / F1[i])
         if method == "dynamic" or (method == "static" and i == 0):
             new = g1 / g2 if g2 > 0 else 0.0
             if new != held_opt:
@@ -96,20 +108,18 @@ def run_month(m, method="futures", r=R):
                 cost += option_cost(trade, p2) * grow(t[i])
                 cash -= trade * p2 * grow(t[i])
                 held_opt = new
-        target = d1 - held_opt * d2  # futures needed: short call delta minus the back option's
+        target = d1 - held_opt * d2  # futures: short call's delta less the back option's
         if target != held_fut:
-            cost += trade_cost(target - held_fut, F1) * grow(t[i])
+            cost += trade_cost(target - held_fut, F1[i]) * grow(t[i])
             held_fut = target
-        nxt = float(f["F"].iloc[i + 1]) if i + 1 < n_days else m["settle"]
-        t_next = t[i + 1] if i + 1 < n_days else T1
-        cash += held_fut * (nxt - F1) * grow(t_next)
-    # front expiry: pay the call, sell the back option at that day's price (last slice rolled on)
+        nxt = F1[i + 1] if i + 1 < len(days) else m["settle"]
+        t_next = t[i + 1] if i + 1 < len(days) else T1
+        cash += held_fut * (nxt - F1[i]) * grow(t_next)
     pay = max(m["settle"] - K, 0.0)
-    bl = m["back_last"]
-    F2e = float(bl["F"]) * m["settle"] / float(f["F"].iloc[-1])
-    T2e = max(float(bl["T"]) - (T1 - t[-1]), 1e-6)
-    p2e = float(sim.black76(F2e, K, T2e, r, svi_vol(bl, math.log(K / F2e)), "call"))
-    if held_opt:
+    if held_opt:  # sell the back option on the settlement day at that day's own smile
+        bs = m["back_settle"]
+        p2e = float(sim.black76(float(bs["F"]), K, float(bs["T"]), r,
+                                svi_vol(bs, math.log(K / float(bs["F"]))), "call"))
         cost += option_cost(-held_opt, p2e)
         cash += held_opt * p2e
-    return {"pnl": cash - pay - cost, "cost": cost, "n_back": held_opt, "F0": K}
+    return {"pnl": cash - pay - cost, "cost": cost, "n_back": held_opt, "F0": F1[0]}

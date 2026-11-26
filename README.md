@@ -3,9 +3,11 @@
 [![CI](https://github.com/Dhirajdas18/delta-hedging-simulator/actions/workflows/ci.yml/badge.svg)](https://github.com/Dhirajdas18/delta-hedging-simulator/actions/workflows/ci.yml)
 [![Hedging simulator](https://github.com/Dhirajdas18/delta-hedging-simulator/actions/workflows/pages.yml/badge.svg)](https://dhirajdas18.github.io/delta-hedging-simulator/)
 
-Sell an option, hedge it with NIFTY futures, and study what is left: why the hedged P&L depends on
-the path the market takes, which volatility to hedge at, how often to rebalance after Indian trading
-costs, and what overnight gaps do to a hedge.
+Sell an option, hedge it with futures, and study what is left, on NIFTY and NSE stock options from
+2015 to 2026 (NSE's daily F&O bhavcopy and the NSE bhavcopy price archive): why the hedged P&L follows
+the path, which volatility and rebalancing rule to use after Indian costs, what gaps and jumps do,
+gamma hedging, stocks against NIFTY, and whether selling and hedging pays. Only derived results are
+committed; the raw NSE data stays local.
 
 **Live hedging simulator: [dhirajdas18.github.io/delta-hedging-simulator](https://dhirajdas18.github.io/delta-hedging-simulator/)**,
 set the NIFTY level, strike, days, the volatility you sold at, the volatility that actually
@@ -33,26 +35,28 @@ A seller who delta-hedges earns, each day, half of gamma times the forward squar
 between the variance sold (σ²Δt) and the day's squared move. Days near the strike, where gamma is
 high, count most, so two months with the same realised volatility can end differently. In simulation,
 a 30-day at-the-money call (worth ₹427) is sold at the volatility that then happens (15%) and hedged
-every 1 to 15 days. On real data, at each month-end from January 2015 to October 2026 (141), the
+every 1 to 15 days. On real data, at each month-end from January 2015 to October 2026 (142), the
 monthly at-the-money call and the 95% put are sold at their SVI implied volatility (from
-implied-vol-surface's local data) and hedged at every close with that expiry's futures until expiry
-(median 18 trading days), with the delta at the sold volatility and NIFTY's close settling the
-option. Each month's hedged P&L is set against two predictions: the volatility gap (the option's
-price at the sold volatility minus at the month's realised volatility) and the day-by-day gamma sum.
+implied-vol-surface's local data) and hedged at every close with that expiry's futures (median 19
+closes), with the delta at the sold volatility. The SVI data has no fit on the day before expiry and
+misses a few other days whose fit failed (one or two a month); there the forward is NIFTY's close
+times the last known forward-to-close ratio. NIFTY's close on the last trading day on or before the
+expiry settles the option. Each month's hedged P&L is set against two predictions: the volatility
+gap (the option's price at the sold volatility minus at the month's realised volatility) and the
+day-by-day gamma sum.
 
 - **More trades, less noise, at the square-root rate.** The spread of simulated hedged P&L fell
   from ₹240 with a trade every 15 days to ₹67 with daily trades, in proportion to one over the
   square root of the number of trades (fitted power −0.47; theory −0.5). Unhedged, it was ₹650.
 - **The path explained most of each real month.** For the at-the-money calls, the gamma sum
-  explained 85% of the month-to-month variation in hedged P&L and the volatility gap 41%; for the
-  95% puts, 88% and 56%.
+  explained 90% of the month-to-month variation in hedged P&L and the volatility gap 46%; for the
+  95% puts, 87% and 58%.
 - **The right volatility call could still lose.** Implied volatility was above the month's
-  realised in 70% of the call months, yet 12 of those months (12%) lost money after hedging; in 8 of
-  the 43 months with implied below realised the hedged call still made money. For puts, 11 of 124
-  and 2 of 17.
-- **Hedging cut the spread four- to five-fold.** Hedged, the call's P&L averaged +0.12% of
-  NIFTY a month with a spread of 0.48%, against a 2.60% spread unhedged; the put +0.07% with 0.47%
-  against 1.70%.
+  realised in 96 of the 142 call months, yet 9 of those lost money after hedging; in 10 of the 46
+  months with implied below realised the hedged call still made money. For puts, 9 of 127 and 0 of 15.
+- **Hedging cut the spread about four- to six-fold.** Hedged, the call's P&L averaged +0.145% of
+  NIFTY a month with a spread of 0.454%, against 2.59% unhedged (5.7 times); the put +0.072% with
+  0.469% against 1.70% (3.6 times).
 
 ### 2. Hedging at the implied volatility left the least risk; knowing the realised volatility didn't help
 
@@ -65,17 +69,17 @@ at the month's realised volatility, which is known only afterwards. Nothing is f
 month is out of sample. A simulation (30-day at-the-money call sold at 15%, hedged daily) checks
 hedging at the true volatility when it stays at 13% and when it runs at 8% then 18%.
 
-- **The implied volatility gave the steadiest result.** Monthly hedged P&L had a spread of 0.48% of
-  NIFTY for at-the-money calls with the implied volatility, 0.53% with either trailing volatility and
-  0.71% with the realised; for 95% puts, 0.47%, 0.49%, 0.49% and 0.57%.
-- **Hindsight didn't help, even in simulation.** With volatility constant at 13%, hedging at the
-  true 13% left a spread of ₹58.5 against ₹61.8 at 15%; when it ran at 8% then 18%, hedging at the
-  month's average left more, ₹84.0 against ₹79.8.
+- **The implied volatility gave the steadiest result.** Monthly hedged P&L had a spread of 0.454% of
+  NIFTY for at-the-money calls with the implied volatility, 0.50–0.51% with either trailing
+  volatility and 0.68% with the realised; for 95% puts, 0.469%, 0.49% and 0.563%.
+- **Knowing the true volatility helped only when it stayed constant.** At a constant 13%, hedging at
+  the true 13% left a spread of ₹58.5 against ₹61.8 at 15%; when it ran at 8% then 18%, hedging at
+  the month's average left more, ₹84.0 against ₹79.8.
 - **The halves mostly agreed.** For calls the implied volatility gave the smallest spread in both
-  2015–2020 (0.56% against 0.90% for the realised) and 2021–2026 (0.40% against 0.44%). For puts in
-  2021–2026 the realised was slightly smaller (0.33% against 0.36%).
-- **A lower hedge volatility raised the puts' average.** The 95% put sold at a median 16.8% averaged
-  +0.067% of NIFTY a month hedged at that volatility and +0.090% to +0.118% hedged at the lower
+  2015–2020 (0.51% against 0.86% for the realised) and 2021–2026 (0.39% against 0.42%). For puts in
+  2021–2026 the realised was slightly smaller (0.34% against 0.36%).
+- **A lower hedge volatility raised the puts' average.** The 95% put sold at a median 16.7% averaged
+  +0.072% of NIFTY a month hedged at that volatility and +0.097% to +0.124% hedged at the lower
   trailing or realised volatilities (medians 12.1%–12.7%), with a wider spread.
 
 ### 3. Trading when the hedge drifts beat trading on a timetable, but saved only a little against daily hedging
@@ -87,22 +91,23 @@ today's Indian rates (from 1 April 2026, applied to every year): STT 0.05% of th
 and SEBI charges, stamp duty on purchases, ₹20 brokerage an order and GST, for a book of 10 lots
 (650 units of NIFTY); no lot rounding and no bid-ask spread. Four kinds of rule decide when to
 trade: every k trading days; whenever the hedge has drifted from the target delta by more than a
-band; a Whalley-Wilmott band, which widens with costs and narrows with gamma, trading only to its
-edge; and Leland's daily hedge with a cost-raised volatility. Each rule's setting is the cheapest
-one whose 2015–2020 spread of monthly hedged P&L is no wider than daily hedging's (or the closest
-if none is), and is then scored on 2021–2026.
+band; a Whalley-Wilmott band, which widens with costs and with gamma, trading only to its edge; and
+Leland's daily hedge with a cost-raised volatility. Each rule's setting is the cheapest one whose
+2015–2020 spread of monthly hedged P&L is no wider than daily hedging's (or the closest if none is),
+and is then scored on 2021–2026. Every k days chose k = 1, which is daily hedging; no
+Whalley-Wilmott setting matched daily's spread, so the closest (the narrowest band tried) is used.
 
-- **Daily hedging cost about 0.04% of NIFTY a month.** For the at-the-money call, 0.0405% in
-  2015–2020 and 0.0363% in 2021–2026 (18 trades a month); for the 95% put, 0.029% and 0.022%.
-- **Bands beat timetables.** In 2015–2020 a band of 0.05 delta left a spread of 0.575% of NIFTY for
-  0.034% of cost; trading every second day left 0.831% for 0.029%. For puts, 0.605% against 0.671%
-  at the same cost.
+- **Daily hedging cost about 0.04% of NIFTY a month.** For the at-the-money call, 0.043% in
+  2015–2020 and 0.038% in 2021–2026 (19 trades a month); for the 95% put, 0.030% and 0.023%.
+- **Bands beat timetables.** In 2015–2020 a band of 0.05 delta left a spread of 0.527% of NIFTY for
+  0.036% of cost; trading every second day left 0.805% for 0.031%. For puts, 0.597% against 0.659%
+  at a slightly lower cost.
 - **Against daily hedging the saving was small.** Out of sample, the chosen delta band cut the
-  call's hedging cost by 7.4% (0.034% against 0.036% of NIFTY) with the same spread; Whalley-Wilmott
-  cut it by 13.4% for a 2.2% wider spread; for puts, by 7.9% and 11.6% (the latter with a 2.3%
-  narrower spread). Leland's volatility changed almost nothing (cost −1.2% calls, +1.0% puts).
+  call's hedging cost by 7.2% (0.0355% against 0.0383% of NIFTY) with the same spread, and
+  Whalley-Wilmott by 4.8%; for puts, by 8.2% and 4.2%. Leland's volatility changed almost nothing
+  (cost −1.2% calls, +0.9% puts).
 - **Costs took about a quarter of the hedged profit.** In 2021–2026 daily hedging costs took the
-  call's +0.135% of NIFTY a month (finding 2) to +0.099%, and the put's +0.079% to +0.057%.
+  call's +0.153% of NIFTY a month (finding 2) to +0.114%, and the put's +0.081% to +0.058%.
 
 ### 4. Two-fifths of NIFTY's daily risk arrived overnight, and hedging more often didn't fix jumps
 
@@ -113,19 +118,19 @@ no trading during the day can remove it. NIFTY's daily open and close from the N
 (2,926 days, January 2015 to November 2026) split each close-to-close move into the overnight gap
 and the trading-day move. Finding 1's months are then hedged at each close and, separately, at each
 open as well (the futures' open isn't in the data, so the forward is assumed to gap by the same
-proportion as the index; 132 months with every open and close). A simulation of a 30-day
+proportion as the index; 141 of the 142 months have every open and close). A simulation of a 30-day
 at-the-money call hedged 1, 2, 4 or 8 times a day, with and without jumps (4 a year, average −2%,
 spread 3%), shows what more trading can and can't do.
 
 - **The gap carried about two-fifths of the risk.** Overnight gaps were 39.9% of NIFTY's
   close-to-close variance and the trading day 65.5%, partly cancelling (correlation −0.04, cross term
-  −5.4%); weighted by each day's gamma, gaps were 44–45% of the months' squared moves.
+  −5.4%); weighted by each day's gamma, gaps were 41–43% of the months' squared moves.
 - **A few gaps carried a fifth.** The biggest 1% of gaps (30 days) carried 21.7% of all close-to-close
   variance; the largest were −9.6% on 23 March 2020, −5.7% on 9 November 2016, −5.2% on 13 March 2020
   and −5.1% on 7 April 2025.
-- **Hedging at the open as well didn't help reliably.** The call's monthly spread went from 0.487%
-  to 0.500% of NIFTY and the put's from 0.474% to 0.448%; both averages fell (call +0.111% to +0.052%,
-  put +0.050% to +0.033%).
+- **Hedging at the open as well didn't help reliably.** The call's monthly spread went from 0.455%
+  to 0.489% of NIFTY and the put's from 0.471% to 0.438%; both averages fell (call +0.144% to +0.074%,
+  put +0.072% to +0.039%).
 - **More trades cut the noise, not the jumps.** In simulation without jumps the spread fell from ₹68
   with one hedge a day to ₹34 with four and ₹24 with eight; with jumps it stayed at ₹142, ₹131 and ₹130.
 
@@ -133,69 +138,75 @@ spread 3%), shows what more trading can and can't do.
 
 <a href="docs/img/gamma.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/gamma.png"><img src="docs/img/gamma.gif" alt="Average and worst-tenth monthly hedged P&L for futures-only, static and dynamic gamma hedges; and each month's futures-only P&L against the dynamic gamma hedge's" width="720"></picture></a>
 
-Finding 1's short at-the-money calls (140 months) are hedged three ways: futures only; a static
-gamma hedge, buying enough of the next monthly expiry's call at the same strike to cancel the
-gamma at the start and holding it; and a dynamic one, re-setting that amount at every close. The
-back-month call is priced each day from its own SVI smile and sold on the front expiry. Every trade
-pays today's Indian costs (futures as in finding 3; options STT 0.15% on sales, NSE, SEBI, stamp, GST
-and ₹20 an order) and half of an assumed 1-point option bid-ask spread. The hedge ratio is set by
-the two gammas, so nothing is fitted.
+Finding 1's short at-the-money calls (141 of the 142 months have the next expiry's smile on every
+day) are hedged three ways: futures only; a static gamma hedge, buying enough of the next monthly
+expiry's call at the same strike to cancel the gamma at the start and holding it; and a dynamic one,
+re-setting that amount at every close. The back-month call is priced each day from its latest SVI
+smile and sold on the front expiry at that day's own smile. Every trade pays today's Indian costs
+(futures as in finding 3; options STT 0.15% on sales, NSE, SEBI, stamp, GST and ₹20 an order) and
+half of an assumed 1-point option bid-ask spread. The hedge ratio is set by the two gammas, so
+nothing is fitted.
 
-- **The gamma hedge cost the average.** After costs, futures-only hedging made +0.086% of NIFTY a
-  month, the static gamma hedge +0.004% and the dynamic one −0.095% (costs 0.038%, 0.051% and 0.105%
+- **The gamma hedge cost the average.** After costs, futures-only hedging made +0.106% of NIFTY a
+  month, the static gamma hedge −0.022% and the dynamic one −0.104% (costs 0.040%, 0.053% and 0.124%
   a month).
-- **It didn't make the bad months better on average.** The worst tenth of months averaged −0.86% with
-  futures only, −0.75% static and −0.88% dynamic; the spread was 0.488%, 0.588% and 0.459%.
+- **It made the bad months worse on average.** The worst tenth of months averaged −0.74% with
+  futures only, −0.82% static and −1.06% dynamic; the spread was 0.458%, 0.593% and 0.521%.
 - **It rescued the futures hedge's worst months but lost in others.** August 2019 went from −2.27%
-  with futures only to +0.01% static; February 2020, the month into the crash, from −1.11% to +5.04%
+  with futures only to +0.25% static; February 2020, the month into the crash, from −1.12% to +4.30%
   static and +2.07% dynamic. But monthly results with and without the dynamic gamma hedge had a
-  correlation of −0.32: the gamma-hedged book lost in different months, most in the month from the
-  end of March 2020 (−2.24%, when futures only made +1.95%).
+  correlation of −0.41: the gamma-hedged book lost in different months, most in the month from the
+  end of March 2020 (−2.52%, when futures only made +2.04%).
 
-### 6. Hedged single-stock options earned more than NIFTY's, with three times the risk, and were ruled by jump days
+### 6. Hedged single-stock options earned more than NIFTY's, but less per unit of risk, and were ruled by jump days
 
 <a href="docs/img/stocks.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/stocks.png"><img src="docs/img/stocks.gif" alt="Average and spread of monthly hedged P&L for NIFTY and single-stock at-the-money calls; average stock hedged P&L by the size of the month's largest one-day move" width="720"></picture></a>
 
 At each month-end, every F&O stock's monthly expiry 15–45 days out gives a forward (the stock
 future's settlement price) and an at-the-money strike (the one nearest it with a traded call and
-put); the call is sold at the mean of their implied volatilities and hedged at every close with the
-stock's split-adjusted price, scaled to the forward, until expiry (carry over the month ignored).
-Option symbols are mapped to the company's current symbol before prices are looked up. That gives
-24,390 stock-months on 141 month-ends (349 stocks), set against finding 1's NIFTY calls; grouping
-months by their largest one-day move is done after the fact, to see what drove the result.
+put); the call is sold at the mean of their implied volatilities (option closes, so a little out of
+step with the futures' settlement price) and hedged at every close with the stock's split-adjusted
+price, scaled to the forward, until expiry (carry over the month ignored, so the option also settles
+on the scaled price). Option symbols are mapped to the company's current symbol before prices are
+looked up. Of 24,670 at-the-money cases on 377 stocks, 87 have no price history (6 stocks, including
+the failed JPPOWER and UNITECH) and 193 have prices missing on the start or expiry date, leaving
+24,390 stock-months on 141 month-ends (349 stocks). They are set against finding 1's NIFTY calls,
+whose expiry window is 20–45 days. Grouping months by their largest one-day move is done after the
+fact, to see what drove the result.
 
 - **Stocks paid more per month.** Sold at a median 33.0% volatility (NIFTY 14.0%), 1.16 times what
   followed, the hedged stock call made +0.37% of the price a month (2015–2020 +0.43%, 2021–2026
-  +0.33%) against +0.12% for NIFTY.
-- **With three times the risk.** The monthly spread was 1.42% against 0.48%, so the return per unit
-  of spread was about the same (0.26 against 0.25); a third of months lost money in both.
+  +0.33%) against +0.145% for NIFTY.
+- **With three times the risk.** The monthly spread was 1.42% against 0.454%, so the return per unit
+  of spread was lower (0.26 against 0.32); a third of months lost money in both.
 - **One big day decided the month.** In the 10% of stock-months with a one-day move over 8% the
   hedged call lost −1.17% on average; with the largest move under 3% it made +0.99%. The day-by-day
-  gamma formula explained 68% of the stocks' monthly results, against 85% for NIFTY.
+  gamma formula explained 68% of the stocks' monthly results, against 90% for NIFTY.
 
-### 7. Selling and hedging NIFTY options earned a thin profit after costs, with falls worth five years of it
+### 7. Selling and hedging NIFTY options earned a thin profit after costs, with falls worth four years of it
 
 <a href="docs/img/verdict.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/verdict.png"><img src="docs/img/verdict.gif" alt="Running total of monthly P&L from selling and hedging a NIFTY at-the-money call and 95% put each month, before costs, after costs, and only in months when implied volatility was above recent volatility, 2015-2026" width="720"></picture></a>
 
-The findings put together: at each month-end from January 2015 to October 2026 (141), sell one
+The findings put together: at each month-end from January 2015 to October 2026 (142), sell one
 at-the-money call and one 95% put at their implied volatility, hedge each with futures on finding 3's
 delta band (settings chosen on 2015–2020), and pay every Indian cost on the futures and on selling
 the options, plus half of an assumed 1-point option spread. Results are per unit of NIFTY, as % of the
 forward, so they are a return on the notional, not on the margin a broker would hold. 2021–2026 is
-out of sample for the band settings. One rule fixed in advance is also tried: sell only when the
-sold volatility is above NIFTY's last-20-day volatility.
+out of sample for the band settings. t-statistics treat months as independent. One rule with nothing
+fitted is also tried: sell only when the at-the-money call's implied volatility is above NIFTY's
+last-20-day volatility.
 
-- **Before costs there was an edge.** The book made +0.186% of NIFTY a month (+2.24% a year), positive
-  in 74% of months, t 2.64.
-- **Costs took about two-fifths.** Futures hedging cost 0.059% a month and selling the options 0.012%;
-  after costs the book made +0.116% a month (+1.39% a year), t 1.62, positive in 71% of months. In
-  2021–2026 alone, +0.145% (t 1.78).
+- **Before costs there was an edge.** The book made +0.214% of NIFTY a month (+2.57% a year), positive
+  in 75% of months, t 3.14.
+- **Costs took about a third.** Futures hedging cost 0.061% a month and selling the options 0.012%;
+  after costs the book made +0.140% a month (+1.69% a year), t 2.04, positive in 73% of months. In
+  2021–2026 alone, +0.163% (t 2.06).
 - **A few months took years of it back.** The worst were −4.10% (February 2020, into the crash),
-  −3.11% (July 2015) and −2.96% (August 2019); the deepest fall in the running total was −6.77%, 4.9
+  −3.11% (July 2015) and −2.96% (August 2019); the deepest fall in the running total was −6.52%, 3.9
   years of the average profit.
 - **Waiting for rich volatility didn't help out of sample.** Selling only in the 68% of months when
-  implied was above recent volatility made +0.167% a month over all years (t 2.31) and cut the worst
-  fall to −4.69%, but its gain came in 2015–2020; in 2021–2026 it made +0.155% against +0.145%.
+  implied was above recent volatility made +0.176% a month over all years (t 2.51) and cut the worst
+  fall to −4.67%, but its gain came in 2015–2020; in 2021–2026 it made +0.169% against +0.163%.
 
 ## Quick start
 

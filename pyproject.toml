@@ -1,7 +1,7 @@
 [project]
 name = "delta-hedging-simulator"
 version = "0.1.0"
-description = "Sell an option, hedge it with NIFTY futures and study the hedged P&L: the gamma decomposition, which volatility to hedge at, when to rebalance after costs, and what jumps do, with a live hedging simulator."
+description = "A delta hedging simulator and studies on real NIFTY and NSE stock options, 2015-2026: path dependence of hedged P&L, which volatility to hedge at, rebalancing after Indian costs, overnight gaps, gamma hedging, single stocks, and whether selling and hedging pays, with a live simulator."
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Dhirajdas18" }]
