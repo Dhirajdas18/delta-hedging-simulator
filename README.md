@@ -15,7 +15,7 @@ hedges; all computed in the browser.
 
 ## Features
 
-- [ ] Why hedged P&L depends on the path: gamma times the gap between implied and realised variance
+- [x] Why hedged P&L depends on the path: gamma times the gap between implied and realised variance
 - [ ] Which volatility to hedge at: implied, realised or a forecast
 - [ ] When to rebalance: fixed times against delta bands, after Indian trading costs
 - [ ] What the close can't hedge: overnight gaps and jumps
@@ -25,14 +25,41 @@ hedges; all computed in the browser.
 
 ## Findings
 
-Findings are added as each study is completed.
+### 1. Hedged profit followed the day-by-day path, not just the month's volatility
+
+<a href="docs/img/path.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/path.png"><img src="docs/img/path.gif" alt="Simulated spread of hedged P&L against the number of hedge trades; real monthly hedged P&L of at-the-money NIFTY calls against the volatility-gap prediction and the gamma-sum prediction" width="720"></picture></a>
+
+A seller who delta-hedges earns, each day, half of gamma times the forward squared times the gap
+between the variance sold (σ²Δt) and the day's squared move. Days near the strike, where gamma is
+high, count most, so two months with the same realised volatility can end differently. In simulation,
+a 30-day at-the-money call (worth ₹427) is sold at the volatility that then happens (15%) and hedged
+every 1 to 15 days. On real data, at each month-end from January 2015 to October 2026 (141), the
+monthly at-the-money call and the 95% put are sold at their SVI implied volatility (from
+implied-vol-surface's local data) and hedged at every close with that expiry's futures until expiry
+(median 18 trading days), with the delta at the sold volatility and NIFTY's close settling the
+option. Each month's hedged P&L is set against two predictions: the volatility gap (the option's
+price at the sold volatility minus at the month's realised volatility) and the day-by-day gamma sum.
+
+- **More trades, less noise, at the square-root rate.** The spread of simulated hedged P&L fell
+  from ₹240 with a trade every 15 days to ₹67 with daily trades, in proportion to one over the
+  square root of the number of trades (fitted power −0.47; theory −0.5). Unhedged, it was ₹650.
+- **The path explained most of each real month.** For the at-the-money calls, the gamma sum
+  explained 85% of the month-to-month variation in hedged P&L and the volatility gap 41%; for the
+  95% puts, 88% and 56%.
+- **The right volatility call could still lose.** Implied volatility was above the month's
+  realised in 70% of the call months, yet 12 of those months (12%) lost money after hedging; in 8 of
+  the 43 months with implied below realised the hedged call still made money. For puts, 11 of 124
+  and 2 of 17.
+- **Hedging cut the spread four- to five-fold.** Hedged, the call's P&L averaged +0.12% of
+  NIFTY a month with a spread of 0.48%, against a 2.60% spread unhedged; the put +0.07% with 0.47%
+  against 1.70%.
 
 ## Quick start
 
 ```bash
 uv sync
 uv run dhs report <topic>               # a study's numbers and charts -> out/
-                                        # (topics are added as each study is completed)
+                                        # (topics: path)
 uv run python scripts/build_site.py     # hedging simulator -> site/index.html (code only, no data)
 uv run pytest
 ```
@@ -41,6 +68,11 @@ The simulator and the tests need no market data; the tests of the browser maths 
 
 ## Design
 
+- `src/dhs/real.py`: real NIFTY months from implied-vol-surface's local data (`DHS_IV_DIR`) and
+  NIFTY's close from the NSE bhavcopy archive (`DHS_LAKE_DIR` or `IV_LAKE_DIR`): sell at the SVI
+  volatility at the strike, hedge at every close with the expiry's futures, and the volatility-gap
+  and gamma-sum predictions. Nothing from NSE is committed.
+- `src/dhs/reports.py`: README findings, reproducible with `dhs report <topic>`.
 - `src/dhs/sim.py`: the core maths in numpy (scipy only for the normal CDF): Black-76 price,
   delta, gamma and vega on a forward; forward paths as geometric Brownian motion with drift
   −σ²/2 in logs, with optional Merton jumps compensated so the forward stays a martingale; and
