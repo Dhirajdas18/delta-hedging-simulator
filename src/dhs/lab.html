@@ -1,0 +1,177 @@
+<form class="calc" id="hs" onsubmit="return false" novalidate>
+  <label>NIFTY futures price (₹) <input id="hs-S" name="S" type="number" inputmode="decimal" min="1" step="any" value="25000" required></label>
+  <label>Strike (₹) <input id="hs-K" name="K" type="number" inputmode="decimal" min="1" step="any" value="25000" required></label>
+  <label>Days to expiry <input id="hs-d" name="d" type="number" inputmode="numeric" min="1" max="365" step="1" value="30" required></label>
+  <label>Option sold <select id="hs-k" name="kind"><option value="call">Call (right to buy)</option><option value="put">Put (right to sell)</option></select></label>
+  <label>Volatility you sold at (% a year) <input id="hs-vs" name="vs" type="number" inputmode="decimal" min="0.1" max="300" step="any" value="15" required></label>
+  <label>Volatility that actually happens (% a year) <input id="hs-vr" name="vr" type="number" inputmode="decimal" min="0.1" max="300" step="any" value="13" required></label>
+  <label>Volatility you hedge at (% a year) <input id="hs-vh" name="vh" type="number" inputmode="decimal" min="0.1" max="300" step="any" placeholder="same as sold" aria-describedby="hs-vh-help"></label>
+  <label>Interest rate (% a year) <input id="hs-r" name="r" type="number" inputmode="decimal" min="-5" max="50" step="any" value="6.5" required></label>
+  <label>Rebalance <select id="hs-rb" name="rb"><option value="1">Every day</option><option value="2">Every 2 days</option><option value="5">Every 5 days</option><option value="band">When delta drifts past a band</option></select></label>
+  <label>Delta band <input id="hs-band" name="band" type="number" inputmode="decimal" min="0.001" max="1" step="any" value="0.05" aria-describedby="hs-band-help"></label>
+  <label>Cost per trade (% of value traded) <input id="hs-c" name="c" type="number" inputmode="decimal" min="0" max="5" step="any" value="0.02" required></label>
+  <label>Paths <input id="hs-n" name="n" type="number" inputmode="numeric" min="100" max="10000" step="100" value="2000" required></label>
+  <label class="check"><input id="hs-j" name="j" type="checkbox"> Add jumps</label>
+  <label>Jumps a year <input id="hs-ji" name="ji" type="number" inputmode="decimal" min="0" max="100" step="any" value="4"></label>
+  <label>Average jump (%) <input id="hs-jm" name="jm" type="number" inputmode="decimal" min="-50" max="50" step="any" value="-2"></label>
+  <label>Jump spread (%) <input id="hs-js" name="js" type="number" inputmode="decimal" min="0" max="50" step="any" value="3"></label>
+</form>
+<p class="note" id="hs-vh-help">Leave the hedging volatility empty to hedge at the volatility you sold at.</p>
+<p class="note" id="hs-band-help">Delta band: with the band rule, you trade only when the futures you should hold differ from what you hold by more than this many units (0.05 = 5% of one unit of NIFTY).</p>
+<p class="note" id="hs-note" aria-live="polite"></p>
+<dl class="stat-grid" id="hs-stats"></dl>
+<h3>Hedged against unhedged</h3>
+<p class="note">How to read it: each bar counts the simulated paths whose profit or loss at expiry fell in that range. Orange is selling the option and doing nothing; blue is selling it and hedging. Hedging squeezes the wide orange spread into a narrow blue one; where the blue sits (above or below zero) comes mostly from the gap between the volatility you sold at and the one that happens. Hover over a bar for details.</p>
+<div id="hs-hist" class="sim-chart" role="img" aria-label="Histogram of profit or loss at expiry across simulated paths, hedged against unhedged"></div>
+<h3>The formula explains it</h3>
+<p class="note">How to read it: each dot is one path. Across is what a simple formula predicts the hedged profit should be from that path’s daily moves; up is what the simulated hedge actually made. Dots on the grey diagonal mean the formula was exactly right. A day with a big move costs the seller money and a quiet day earns it, in proportion to how sensitive the hedge was that day. Hover over a dot for the numbers.</p>
+<div id="hs-fit" class="sim-chart" role="img" aria-label="Scatter of each path’s hedged profit against the profit predicted by the gamma formula, with a 45 degree line"></div>
+<h3>Three sample paths</h3>
+<p class="note">How to read it: the top panel is NIFTY futures over the days to expiry for three simulated paths; the bottom panel is how many units of futures the hedge held at each point. As NIFTY rises the hedge of a sold call holds more futures, and as it falls it holds fewer; near expiry it swings towards all or nothing depending on which side of the strike NIFTY is.</p>
+<div id="hs-paths" class="sim-chart tall" role="img" aria-label="Three simulated NIFTY futures paths and the futures held by the hedge over time"></div>
+<script>
+$js
+(() => {
+  const el = (id) => document.getElementById(id);
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const ids = { S: "hs-S", K: "hs-K", d: "hs-d", kind: "hs-k", vs: "hs-vs", vr: "hs-vr", vh: "hs-vh", r: "hs-r",
+    rb: "hs-rb", band: "hs-band", c: "hs-c", n: "hs-n", j: "hs-j", ji: "hs-ji", jm: "hs-jm", js: "hs-js" };
+  const CHOICES = { kind: ["call", "put"], rb: ["1", "2", "5", "band"], j: ["0", "1"] };
+  const SEED = 1;
+  const num = (x, dp = 2) => Number.isFinite(x) ? x.toLocaleString("en-IN", { minimumFractionDigits: dp, maximumFractionDigits: dp }).replace("-", "−") : "–";
+  const rs = (x, dp = 0) => (x < 0 ? "−₹" : "₹") + num(Math.abs(x), dp);
+  const getv = (k) => k === "j" ? (el(ids.j).checked ? "1" : "0") : el(ids[k]).value;
+  const setv = (k, v) => { if (k === "j") el(ids.j).checked = v === "1"; else el(ids[k]).value = v; };
+
+  // Inputs from the URL hash (unknown or bad values fall back to the defaults).
+  const h = new URLSearchParams(location.hash.slice(1));
+  for (const k of Object.keys(ids)) {
+    const v = h.get(k);
+    if (v === null) continue;
+    if (CHOICES[k] ? CHOICES[k].includes(v) : (v === "" && k === "vh") || Number.isFinite(parseFloat(v))) setv(k, v);
+  }
+
+  const read = () => {
+    const o = {};
+    for (const k of Object.keys(ids)) o[k] = CHOICES[k] ? getv(k) : parseFloat(getv(k));
+    if (getv("vh").trim() === "") o.vh = o.vs;
+    return o;
+  };
+  const problem = (o) => {
+    if (!(o.S > 0) || !(o.K > 0)) return "Enter a futures price and a strike above zero.";
+    if (!(Number.isInteger(o.d) && o.d >= 1 && o.d <= 365)) return "Enter a whole number of days from 1 to 365.";
+    if (!(o.vs > 0 && o.vr > 0 && o.vh > 0)) return "Enter volatilities above zero.";
+    if (!Number.isFinite(o.r)) return "Enter an interest rate (0 is fine).";
+    if (o.rb === "band" && !(o.band > 0 && o.band <= 1)) return "Enter a delta band above 0 and at most 1.";
+    if (!(o.c >= 0)) return "Enter a cost of 0 or more.";
+    if (!(Number.isInteger(o.n) && o.n >= 100 && o.n <= 10000)) return "Enter a whole number of paths from 100 to 10,000.";
+    if (o.j === "1" && !(o.ji >= 0 && o.js >= 0 && Number.isFinite(o.jm))) return "Enter jumps a year and a jump spread of 0 or more, and an average jump.";
+    return "";
+  };
+
+  const cfg = { displaylogo: false, responsive: true };
+  const base = () => ({ paper_bgcolor: css("--surface"), plot_bgcolor: css("--surface"),
+    font: { family: getComputedStyle(document.body).fontFamily, color: css("--text-2"), size: 12 },
+    margin: { l: 64, r: 16, t: 32, b: 56 }, legend: { orientation: "h", y: 1.02, yanchor: "bottom", x: 0 },
+    hovermode: "closest" });
+  const axis = (title, extra = {}) => Object.assign({ title, gridcolor: css("--grid"), zerolinecolor: css("--grid") }, extra);
+  const narrowAt = (id) => el(id).clientWidth < 600;
+  const legendFor = (id) => narrowAt(id)  // phones: legend under the chart
+    ? { orientation: "h", x: 0, y: -0.2, yanchor: "top", font: { size: 11 } } : { orientation: "h", y: 1.02, yanchor: "bottom", x: 0 };
+  const marginFor = (id, b = 56) => ({ l: 72, r: 16, t: narrowAt(id) ? 24 : 56, b: narrowAt(id) ? b + 64 : b });
+  const stats = (rows) => { el("hs-stats").innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join(""); };
+  const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+  const sd = (a) => { const m = mean(a); return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1)); };
+  const corr = (a, b) => { const ma = mean(a), mb = mean(b); let sab = 0, saa = 0, sbb = 0;
+    for (let i = 0; i < a.length; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+    return sab / Math.sqrt(saa * sbb); };
+
+  const update = () => {
+    const band = el("hs-rb").value === "band", jumps = el("hs-j").checked;
+    el("hs-band").disabled = !band;
+    ["hs-ji", "hs-jm", "hs-js"].forEach((id) => { el(id).disabled = !jumps; });
+    history.replaceState(null, "", "#" + Object.keys(ids).map((k) => `${k}=${encodeURIComponent(getv(k))}`).join("&"));
+    const o = read(), bad = problem(o);
+    if (bad) {
+      el("hs-note").textContent = bad;
+      stats([]);
+      ["hs-hist", "hs-fit", "hs-paths"].forEach((id) => Plotly.purge(id));
+      return;
+    }
+    const T = o.d / 365, r = o.r / 100, vs = o.vs / 100, vr = o.vr / 100, vh = o.vh / 100;
+    const jm = jumps ? [o.ji, o.jm / 100, o.js / 100] : [0, 0, 0];
+    const paths = simulatePaths(o.S, vr, T, o.d, o.n, SEED, ...jm);
+    const res = band ? hedgePnl(paths, o.K, T, r, vh, vs, o.kind, "band", 1, o.band, 0, o.c / 100)
+      : hedgePnl(paths, o.K, T, r, vh, vs, o.kind, "time", parseInt(o.rb, 10), null, 0, o.c / 100);
+    const pnl = Array.from(res.pnl), bare = Array.from(res.unhedged);
+    const pred = pnl.map((_, i) => res.edge[i] + res.gamma[i]);
+    const m = mean(pnl), s = sd(pnl), lose = pnl.filter((x) => x < 0).length / pnl.length;
+    const gap = black76(o.S, o.K, T, r, vs, o.kind) - black76(o.S, o.K, T, r, vr, o.kind);
+    const rho = corr(pnl, pred);
+    const rule = band ? `when delta drifts more than ${o.band}` : o.rb === "1" ? "every day" : `every ${o.rb} days`;
+
+    stats([
+      ["Average hedged profit <small>(per unit of NIFTY)</small>", rs(m)],
+      ["Spread of hedged profit <small>(standard deviation)</small>", rs(s)],
+      ["Spread if not hedged", rs(sd(bare))],
+      ["Paths that lost money", num(100 * lose, 1) + "%"],
+      ["Trades per path <small>(average)</small>", num(mean(Array.from(res.trades)), 1)],
+      ["Costs per path <small>(average)</small>", rs(mean(Array.from(res.costs)), 2)],
+      ["Expected profit from the volatility gap", rs(gap)],
+    ]);
+    el("hs-note").textContent = `${o.n.toLocaleString("en-IN")} paths of ${o.d} days, a sold ${o.kind} at strike ₹${num(o.K, 0)}, ` +
+      `sold at ${num(o.vs, 1)}% volatility, ${num(o.vr, 1)}% actually happening, hedged at ${num(o.vh, 1)}% ${rule}` +
+      `${jumps ? `, with about ${num(o.ji, 1)} jumps a year` : ""}. Hedged profit averages ${rs(m)} with a spread of ${rs(s)}; ` +
+      `the volatility gap alone is worth ${rs(gap)}. The formula and the simulated hedge agree with a correlation of ${num(rho, 2)}.`;
+
+    const t2 = css("--text-2"), ca = css("--accent"), cx = css("--accent-2"), surf = css("--surface");
+    // Histogram: one bin width for both, fine enough to show the hedged spread.
+    const all = pnl.concat(bare), lo = Math.min(...all), hi = Math.max(...all);
+    const size = Math.max(s / 4, (hi - lo) / 400, 0.01);
+    const bins = { start: lo - size, end: hi + size, size };
+    const ht = (lab) => `${lab}<br>₹%{x} at expiry: %{y:.1f}% of paths<extra></extra>`;
+    Plotly.react("hs-hist", [
+      { x: bare, type: "histogram", xbins: bins, histnorm: "percent", marker: { color: cx }, opacity: 0.6, name: "sold, not hedged", hovertemplate: ht("not hedged") },
+      { x: pnl, type: "histogram", xbins: bins, histnorm: "percent", marker: { color: ca }, opacity: 0.75, name: "sold and hedged", hovertemplate: ht("delta-hedged, after costs") },
+    ], Object.assign(base(), { barmode: "overlay", bargap: 0, legend: legendFor("hs-hist"), margin: marginFor("hs-hist"),
+      xaxis: axis("profit or loss at expiry, ₹ per unit of NIFTY", { tickformat: ",.0f" }),
+      yaxis: axis("share of paths, %") }), cfg);
+
+    // Scatter: prediction against result, with the 45° line.
+    const both = pnl.concat(pred), a0 = Math.min(...both), a1 = Math.max(...both);
+    Plotly.react("hs-fit", [
+      { x: [a0, a1], y: [a0, a1], mode: "lines", line: { color: t2, width: 1.5, dash: "dash" }, hoverinfo: "skip", name: "formula exactly right" },
+      { x: pred, y: pnl, type: "scattergl", mode: "markers", marker: { color: ca, size: 4, opacity: 0.5 }, name: "one simulated path",
+        hovertemplate: "predicted ₹%{x:,.0f}, actual ₹%{y:,.0f}<br>prediction: Σ ½·Γ·F²·(σ²Δt − (ΔF/F)²) plus the premium gap<br>gap to the formula: discrete hedging, jumps and costs<extra></extra>" },
+    ], Object.assign(base(), { legend: legendFor("hs-fit"), margin: marginFor("hs-fit"),
+      annotations: [{ xref: "paper", yref: "paper", x: 0, y: 1, xanchor: "left", yanchor: "top", showarrow: false,
+        text: `correlation ${num(rho, 2)}`, font: { size: 12, color: t2 } }],
+      xaxis: axis("predicted by the formula, ₹", { tickformat: ",.0f" }),
+      yaxis: axis("actual hedged profit, ₹", { tickformat: ",.0f" }) }), cfg);
+
+    // Three sample paths: NIFTY on top, futures held below (held from each day to the next).
+    const days = Array.from({ length: o.d + 1 }, (_, i) => i);
+    const cols = [ca, css("--violet"), css("--green")];
+    const tr = [{ x: [0, o.d], y: [o.K, o.K], mode: "lines", line: { color: t2, width: 1, dash: "dot" }, hoverinfo: "skip", name: `strike, ₹${num(o.K, 0)}` }];
+    for (let p = 0; p < Math.min(3, o.n); p++) {
+      const held = Array.from(res.held[p]);
+      tr.push({ x: days, y: Array.from(paths[p]), mode: "lines", line: { color: cols[p], width: 2 }, name: `path ${p + 1}`, legendgroup: `p${p}`,
+        hovertemplate: `path ${p + 1}, day %{x}<br>NIFTY futures ₹%{y:,.0f}<extra></extra>` });
+      tr.push({ x: days, y: held.concat(held[held.length - 1]), yaxis: "y2", mode: "lines", line: { color: cols[p], width: 2, shape: "hv" }, showlegend: false, legendgroup: `p${p}`,
+        hovertemplate: `path ${p + 1}, from day %{x}<br>futures held %{y:.3f} units (Black-76 delta at the hedge volatility)<extra></extra>` });
+    }
+    Plotly.react("hs-paths", tr, Object.assign(base(), { legend: legendFor("hs-paths"), margin: marginFor("hs-paths"),
+      xaxis: axis("days from today", { range: [0, o.d], anchor: "y2" }),
+      yaxis: axis("NIFTY futures, ₹", { domain: [0.42, 1], tickformat: ",.0f" }),
+      yaxis2: axis("futures held, units", { domain: [0, 0.32], tickformat: ".2f" }) }), cfg);
+  };
+
+  let queued = false;
+  const later = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; update(); }); } };
+  el("hs").addEventListener("input", later);
+  el("hs").addEventListener("change", later);
+  addEventListener("resize", later);  // legends move under the charts on narrow screens
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", update);
+  update();
+})();
+</script>
