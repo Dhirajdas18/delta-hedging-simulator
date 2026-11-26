@@ -247,8 +247,107 @@ def report_rebalance(out_dir: Path) -> dict:
     return res
 
 
+def report_gaps(out_dir: Path) -> dict:
+    """What a close-to-close hedge can't catch: NIFTY's overnight gaps (open against the previous
+    close, the NSE bhavcopy archive's index files, 2015-2026), their share of daily variance, the biggest
+    gap days; finding 1's months hedged at each close and also at each open; and a simulation of
+    hedging more often with and without jumps."""
+    import pandas as pd
+
+    from dhs import sim
+    from dhs.gaps import hedge_twice, month_gaps, nifty_ohlc
+    from dhs.real import R, hedge_path, month_cases
+
+    res = {}
+    o = nifty_ohlc()
+    o = o[o.index >= "2015-01-01"]
+    g = np.log(o["open"] / o["close"].shift()).dropna()
+    i = np.log(o["close"] / o["open"]).reindex(g.index)
+    tot = ((g + i) ** 2).sum()
+    big = g.abs() > g.abs().quantile(0.99)
+    res["NIFTY days"] = (
+        f"{len(g):,} ({g.index.min():%b %Y}-{g.index.max():%b %Y}); overnight gap's share of "
+        f"close-to-close variance {(g**2).sum() / tot:.1%}, trading day {(i**2).sum() / tot:.1%}, "
+        f"cross term {(2 * g * i).sum() / tot:+.1%} (correlation {np.corrcoef(g, i)[0, 1]:+.2f})"
+    )
+    top = g.reindex(g.abs().sort_values().index[-5:][::-1])
+    res["  biggest 1% of gaps"] = (
+        f"{int(big.sum())} days carried {((g + i) ** 2)[big].sum() / tot:.1%} of all "
+        "close-to-close variance; largest: "
+        + ", ".join(f"{d:%d %b %Y} {100 * v:+.1f}%" for d, v in top.items())
+    )
+    rows = []
+    for c in month_cases():
+        gap = month_gaps(c, o)
+        if gap is None:
+            continue
+        F = c["F"]
+        once = hedge_path(F, c["t"], c["K"], c["T"], R, c["vol"], c["kind"], c["settle"])[0]
+        twice = hedge_twice(F, c["t"], gap, c["K"], c["T"], R, c["vol"], c["kind"], c["settle"])
+        r = np.diff(np.log(F))
+        w = 0.5 * sim.gamma(F[:-1], c["K"], c["T"] - c["t"][:-1], R, c["vol"]) * F[:-1] ** 2
+        rows.append({"kind": c["kind"], "once": 100 * once / F[0], "twice": 100 * twice / F[0],
+                     "gamma_gap": float((w * np.log(gap) ** 2).sum()),
+                     "gamma_all": float((w * r**2).sum())})
+    d = pd.DataFrame(rows)
+    for kind, x in d.groupby("kind"):
+        name = "at-the-money call" if kind == "call" else "95% put"
+        res[f"{name} ({len(x)} months with every open and close)"] = (
+            f"gaps' share of the gamma-weighted squared moves "
+            f"{x['gamma_gap'].sum() / x['gamma_all'].sum():.0%}; "
+            f"hedged at each close: mean {x['once'].mean():+.3f}%, spread {x['once'].std():.3f}%; "
+            f"also at each open: mean {x['twice'].mean():+.3f}%, spread {x['twice'].std():.3f}%"
+        )
+    T, F0 = 30 / 365, 25000.0
+    per_day = (1, 2, 4, 8)
+    sims = {}
+    for lab, ji in (("no jumps", 0.0), ("jumps", 4.0)):
+        sims[lab] = []
+        for k in per_day:
+            p = sim.simulate_paths(F0, 0.15, T, 30 * k, 8000, seed=3, jump_intensity=ji,
+                                   jump_mean=-0.02, jump_sd=0.03)
+            sims[lab].append(float(np.std(sim.hedge_pnl(p, F0, T, R, 0.15, 0.15, "call")["pnl"])))
+    res["simulation, 30-day ATM call, hedges a day 1/2/4/8: spread of hedged P&L (Rs)"] = (
+        "; ".join(f"{lab}: " + " / ".join(f"{v:.1f}" for v in vals) for lab, vals in sims.items())
+        + " (jumps: 4 a year, average -2%, spread 3%)")
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.3))
+    ax = axes[0]
+    both = (g**2).sum() + (i**2).sum()  # the two parts' own sizes, so the bars add to 100%
+    share = [(g**2).sum() / both * 100, (i**2).sum() / both * 100]
+    res["  shares of the two parts' combined size (chart)"] = (
+        f"overnight {share[0]:.1f}%, trading day {share[1]:.1f}%")
+    ax.bar([0, 1], share, color=[plots.COLORS["unhedged"], plots.COLORS["hedged"]], width=0.6)
+    for x, y in enumerate(share):
+        ax.text(x, y + 1, f"{y:.0f}%", ha="center", va="bottom", fontsize=10, color=plots.TEXT)
+    ax.set_xticks([0, 1], ["overnight gap\n(close to open)", "trading day\n(open to close)"])
+    ax.set_ylabel("share of NIFTY's daily price\nvariance, 2015-2026, %")
+    ax.set_ylim(0, 75)
+    ax.set_title("Two-fifths of NIFTY's daily risk arrives overnight", fontsize=10.5)
+    ax = axes[1]
+    for lab, col in (("no jumps", plots.COLORS["hedged"]), ("jumps", plots.COLORS["unhedged"])):
+        ax.plot(per_day, sims[lab], color=col, lw=2, marker="o")
+        plots.label_line_end(ax, per_day[-1], sims[lab][-1],
+                             "with jumps" if lab == "jumps" else "no jumps", col)
+    ax.set_xscale("log")
+    ax.set_xticks(per_day, [str(k) for k in per_day])
+    ax.xaxis.set_minor_formatter(plt.NullFormatter())
+    ax.set_xlim(0.8, 14)
+    ax.set_ylim(0, None)
+    ax.set_xlabel("hedge trades a day (simulated 30-day ATM call)")
+    ax.set_ylabel("spread of hedged P&L, Rs")
+    ax.set_title("More trades cut the noise, not the jumps", fontsize=10.5)
+    fig.suptitle("A hedge set at the close can't catch gaps, and trading more often doesn't fix "
+                 "jumps", x=0.01, ha="left", fontsize=12, fontweight="semibold")
+    fig.tight_layout()
+    plots.save(fig, out_dir, "gaps")
+    plt.close(fig)
+    return res
+
+
 REPORTS: dict[str, Callable[[Path], dict]] = {
     "path": report_path,
     "hedge-vol": report_hedge_vol,
     "rebalance": report_rebalance,
+    "gaps": report_gaps,
 }

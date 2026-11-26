@@ -18,7 +18,7 @@ hedges; all computed in the browser.
 - [x] Why hedged P&L depends on the path: gamma times the gap between implied and realised variance
 - [x] Which volatility to hedge at: implied, realised or a forecast
 - [x] When to rebalance: fixed times against delta bands, after Indian trading costs
-- [ ] What the close can't hedge: overnight gaps and jumps
+- [x] What the close can't hedge: overnight gaps and jumps
 - [ ] Gamma hedging with a second option
 - [ ] Hedging single-stock options against NIFTY
 - [ ] Is selling and hedging options an edge after costs and gaps
@@ -104,12 +104,37 @@ if none is), and is then scored on 2021–2026.
 - **Costs took about a quarter of the hedged profit.** In 2021–2026 daily hedging costs took the
   call's +0.135% of NIFTY a month (finding 2) to +0.099%, and the put's +0.079% to +0.057%.
 
+### 4. Two-fifths of NIFTY's daily risk arrived overnight, and hedging more often didn't fix jumps
+
+<a href="docs/img/gaps.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/gaps.png"><img src="docs/img/gaps.gif" alt="Share of NIFTY's daily price variance from the overnight gap and the trading day; simulated spread of hedged P&L against hedge trades a day with and without jumps" width="720"></picture></a>
+
+A hedge set at each close is exposed to the jump from that close to the next morning's open, and
+no trading during the day can remove it. NIFTY's daily open and close from the NSE bhavcopy archive
+(2,926 days, January 2015 to November 2026) split each close-to-close move into the overnight gap
+and the trading-day move. Finding 1's months are then hedged at each close and, separately, at each
+open as well (the futures' open isn't in the data, so the forward is assumed to gap by the same
+proportion as the index; 132 months with every open and close). A simulation of a 30-day
+at-the-money call hedged 1, 2, 4 or 8 times a day, with and without jumps (4 a year, average −2%,
+spread 3%), shows what more trading can and can't do.
+
+- **The gap carried about two-fifths of the risk.** Overnight gaps were 39.9% of NIFTY's
+  close-to-close variance and the trading day 65.5%, partly cancelling (correlation −0.04, cross term
+  −5.4%); weighted by each day's gamma, gaps were 44–45% of the months' squared moves.
+- **A few gaps carried a fifth.** The biggest 1% of gaps (30 days) carried 21.7% of all close-to-close
+  variance; the largest were −9.6% on 23 March 2020, −5.7% on 9 November 2016, −5.2% on 13 March 2020
+  and −5.1% on 7 April 2025.
+- **Hedging at the open as well didn't help reliably.** The call's monthly spread went from 0.487%
+  to 0.500% of NIFTY and the put's from 0.474% to 0.448%; both averages fell (call +0.111% to +0.052%,
+  put +0.050% to +0.033%).
+- **More trades cut the noise, not the jumps.** In simulation without jumps the spread fell from ₹68
+  with one hedge a day to ₹34 with four and ₹24 with eight; with jumps it stayed at ₹142, ₹131 and ₹130.
+
 ## Quick start
 
 ```bash
 uv sync
 uv run dhs report <topic>               # a study's numbers and charts -> out/
-                                        # (topics: path, hedge-vol, rebalance)
+                                        # (topics: path, hedge-vol, rebalance, gaps)
 uv run python scripts/build_site.py     # hedging simulator -> site/index.html (code only, no data)
 uv run pytest
 ```
@@ -125,6 +150,8 @@ The simulator and the tests need no market data; the tests of the browser maths 
   NSE is committed.
 - `src/dhs/rebalance.py`: NIFTY futures costs at today's Indian rates and the time, delta-band,
   Whalley-Wilmott and Leland rebalancing rules on real month paths.
+- `src/dhs/gaps.py`: NIFTY's open and close from the NSE bhavcopy archive's index files, the
+  overnight-gap split of each month's moves, and the hedge rebalanced at the open as well as the close.
 - `src/dhs/sim.py`: the core maths in numpy (scipy only for the normal CDF): Black-76 price,
   delta, gamma and vega on a forward; forward paths as geometric Brownian motion with drift
   −σ²/2 in logs, with optional Merton jumps compensated so the forward stays a martingale; and
