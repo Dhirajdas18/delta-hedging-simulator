@@ -114,7 +114,7 @@ to cancel that exposure, keep adjusting, and what’s left at expiry is mostly t
 volatility you sold and the volatility that actually happened, path by path. Change the inputs to
 see the spread of outcomes, how well a simple formula explains each one, and what rebalancing rules,
 costs and sudden jumps do.</p>
-<p class="meta"><a href="$repo">Code and findings on GitHub</a></p>
+<p class="meta"><span>Updated $updated</span><a href="$repo">Code and findings on GitHub</a></p>
 </header>
 </div>
 <nav aria-label="Sections"><ul>
@@ -124,8 +124,11 @@ $nav
 $sections
 </main>
 <footer class="wrap">
-<p>Everything on this page is computed in your browser from the inputs above; no market data is
-loaded. The default inputs are a NIFTY-like example, not live prices.</p>
+<p>The simulator runs entirely in your browser from the inputs above; its default inputs are a
+NIFTY-like example, not live prices. The findings in the repository use real data: NSE’s daily
+F&amp;O bhavcopy (NIFTY option closing prices and the SVI fits from implied-vol-surface) and NIFTY’s
+close from the NSE bhavcopy archive; the page carries no market data. Rebuilt whenever the code
+changes.</p>
 <p>Research only, not investment advice.</p>
 </footer>
 <script>

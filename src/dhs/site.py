@@ -1,6 +1,7 @@
 """The hedging simulator: one static Plotly page built from code alone (sim.js does the maths in
 the browser), so the Pages build needs no data and no schedule."""
 
+import datetime
 import re
 from pathlib import Path
 from string import Template
@@ -85,6 +86,7 @@ def build_html() -> str:
     dk = plots.DARK
     s = plots.SERIES
     return PAGE.substitute(
+        updated=datetime.date.today().strftime("%d %b %Y").lstrip("0"),
         icon=ICON,
         font=FONT,
         repo=REPO,
