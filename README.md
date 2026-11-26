@@ -19,7 +19,7 @@ hedges; all computed in the browser.
 - [x] Which volatility to hedge at: implied, realised or a forecast
 - [x] When to rebalance: fixed times against delta bands, after Indian trading costs
 - [x] What the close can't hedge: overnight gaps and jumps
-- [ ] Gamma hedging with a second option
+- [x] Gamma hedging with a second option
 - [ ] Hedging single-stock options against NIFTY
 - [ ] Is selling and hedging options an edge after costs and gaps
 
@@ -129,12 +129,36 @@ spread 3%), shows what more trading can and can't do.
 - **More trades cut the noise, not the jumps.** In simulation without jumps the spread fell from ₹68
   with one hedge a day to ₹34 with four and ₹24 with eight; with jumps it stayed at ₹142, ₹131 and ₹130.
 
+### 5. A second option swapped one risk for another and cost the hedged profit
+
+<a href="docs/img/gamma.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/gamma.png"><img src="docs/img/gamma.gif" alt="Average and worst-tenth monthly hedged P&L for futures-only, static and dynamic gamma hedges; and each month's futures-only P&L against the dynamic gamma hedge's" width="720"></picture></a>
+
+Finding 1's short at-the-money calls (140 months) are hedged three ways: futures only; a static
+gamma hedge, buying enough of the next monthly expiry's call at the same strike to cancel the
+gamma at the start and holding it; and a dynamic one, re-setting that amount at every close. The
+back-month call is priced each day from its own SVI smile and sold on the front expiry. Every trade
+pays today's Indian costs (futures as in finding 3; options STT 0.15% on sales, NSE, SEBI, stamp, GST
+and ₹20 an order) and half of an assumed 1-point option bid-ask spread. The hedge ratio is set by
+the two gammas, so nothing is fitted.
+
+- **The gamma hedge cost the average.** After costs, futures-only hedging made +0.086% of NIFTY a
+  month, the static gamma hedge +0.004% and the dynamic one −0.095% (costs 0.038%, 0.051% and 0.105%
+  a month).
+- **It didn't make the bad months better on average.** The worst tenth of months averaged −0.86% with
+  futures only, −0.75% static and −0.88% dynamic; the spread was 0.488%, 0.588% and 0.459%.
+- **It rescued the futures hedge's worst months but lost in others.** August 2019 went from −2.27%
+  with futures only to +0.01% static; February 2020, the month into the crash, from −1.11% to +5.04%
+  static and +2.07% dynamic. But monthly results with and without the dynamic gamma hedge had a
+  correlation of −0.32: the gamma-hedged book lost in different months, most in the month from the
+  end of March 2020 (−2.24%, when futures only made +1.95%).
+
 ## Quick start
 
 ```bash
 uv sync
 uv run dhs report <topic>               # a study's numbers and charts -> out/
-                                        # (topics: path, hedge-vol, rebalance, gaps)
+                                        # (topics: path, hedge-vol, rebalance, gaps,
+                                        #  gamma)
 uv run python scripts/build_site.py     # hedging simulator -> site/index.html (code only, no data)
 uv run pytest
 ```
@@ -152,6 +176,9 @@ The simulator and the tests need no market data; the tests of the browser maths 
   Whalley-Wilmott and Leland rebalancing rules on real month paths.
 - `src/dhs/gaps.py`: NIFTY's open and close from the NSE bhavcopy archive's index files, the
   overnight-gap split of each month's moves, and the hedge rebalanced at the open as well as the close.
+- `src/dhs/gamma.py`: the short call hedged with futures only or with the next monthly expiry's
+  call (static or re-set daily), back option priced from its own smile, Indian futures and option
+  costs and a 1-point option spread.
 - `src/dhs/sim.py`: the core maths in numpy (scipy only for the normal CDF): Black-76 price,
   delta, gamma and vega on a forward; forward paths as geometric Brownian motion with drift
   −σ²/2 in logs, with optional Merton jumps compensated so the forward stays a martingale; and

@@ -345,9 +345,94 @@ def report_gaps(out_dir: Path) -> dict:
     return res
 
 
+def report_gamma(out_dir: Path) -> dict:
+    """Gamma hedging with a second option (dhs.gamma): finding 1's short at-the-money calls hedged
+    with futures only, with a static gamma hedge (next monthly expiry's option at the same strike,
+    bought once to cancel the gamma, held), or a dynamic one (re-set every close), all with today's
+    Indian futures and option costs and a 1-point option spread. Nothing is fitted (the hedge ratio
+    is Gamma_front / Gamma_back); halves shown."""
+    import pandas as pd
+
+    from dhs.gamma import month_pairs, run_month
+
+    res = {}
+    rows = []
+    for m in month_pairs():
+        for meth in ("futures", "static", "dynamic"):
+            o = run_month(m, meth)
+            rows.append({"date": m["date"], "meth": meth, "pnl": 100 * o["pnl"] / o["F0"],
+                         "cost": 100 * o["cost"] / o["F0"], "n": o["n_back"]})
+    d = pd.DataFrame(rows)
+    names = {"futures": "futures only", "static": "static gamma hedge",
+             "dynamic": "dynamic gamma hedge"}
+    stats = {}
+    for meth in ("futures", "static", "dynamic"):
+        x = d[d["meth"] == meth]
+        srt = x["pnl"].sort_values()
+        k = max(1, round(0.1 * len(srt)))
+        stats[meth] = {"mean": x["pnl"].mean(), "sd": x["pnl"].std(), "worst": srt.iloc[:k].mean(),
+                       "best": srt.iloc[-k:].mean(), "cost": x["cost"].mean()}
+        halves = x.groupby(x["date"].dt.year <= 2020)["pnl"].mean()
+        res[f"{names[meth]} ({len(x)} months)"] = (
+            f"mean after costs {stats[meth]['mean']:+.3f}% of NIFTY a month (2015-2020 "
+            f"{halves[True]:+.3f}%, 2021-2026 {halves[False]:+.3f}%), "
+            f"spread {stats[meth]['sd']:.3f}%, "
+            f"average of the worst tenth {stats[meth]['worst']:+.3f}%, of the best tenth "
+            f"{stats[meth]['best']:+.3f}%, costs {stats[meth]['cost']:.3f}%"
+            + (f", {x['n'].mean():.2f} back options bought per front option" if meth == "static"
+               else "")
+        )
+    w = d.pivot(index="date", columns="meth", values="pnl")
+    worst5 = w["futures"].nsmallest(5).index
+    res["  the five worst futures-only months, futures / static / dynamic"] = "; ".join(
+        f"{t:%b %Y} {w.at[t, 'futures']:+.2f} / {w.at[t, 'static']:+.2f} / "
+        f"{w.at[t, 'dynamic']:+.2f}" for t in worst5)
+    gapm = (w["futures"] - w["dynamic"]).idxmax()
+    res["  correlation of monthly P&L, futures only against dynamic"] = (
+        f"{w[['futures', 'dynamic']].corr().iloc[0, 1]:+.2f}; widest split {gapm:%b %Y}: futures "
+        f"{w.at[gapm, 'futures']:+.2f}%, dynamic {w.at[gapm, 'dynamic']:+.2f}%")
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
+    ax = axes[0]
+    cols = {"futures": plots.COLORS["hedged"], "static": plots.SERIES[3],
+            "dynamic": plots.COLORS["unhedged"]}
+    groups = [("mean", "average month"), ("worst", "worst tenth\nof months")]
+    xs = np.arange(len(groups))
+    for j, meth in enumerate(("futures", "static", "dynamic")):
+        vals = [stats[meth][k] for k, _ in groups]
+        ax.bar(xs + (j - 1) * 0.26, vals, 0.26, color=cols[meth], label=names[meth])
+        for x, y in zip(xs + (j - 1) * 0.26, vals, strict=True):
+            ax.text(x, y + (0.03 if y >= 0 else -0.03), f"{y:+.2f}", ha="center",
+                    va="bottom" if y >= 0 else "top", fontsize=8.5, color=plots.TEXT)
+    ax.axhline(0, color=plots.TEXT_2, lw=0.8)
+    ax.set_xticks(xs, [g[1] for g in groups])
+    ax.set_ylabel("hedged P&L after costs,\n% of NIFTY a month")
+    ax.set_ylim(-1.15, 0.4)
+    ax.legend(fontsize=8.5, loc="upper right")
+    ax.set_title("It cost the average, not the worst months", fontsize=10.5)
+    ax = axes[1]
+    ax.scatter(w["futures"], w["dynamic"], s=16, color=plots.COLORS["hedged"], alpha=0.7, lw=0)
+    lim = float(np.nanmax(np.abs(w[["futures", "dynamic"]].to_numpy()))) * 1.08
+    ax.plot([-lim, lim], [-lim, lim], color=plots.COLORS["formula"], lw=1, ls="--")
+    ax.axhline(0, color=plots.GRID, lw=0.8)
+    ax.axvline(0, color=plots.GRID, lw=0.8)
+    ax.set_xlim(-lim, lim)
+    ax.set_ylim(-lim, lim)
+    ax.set_xlabel("futures only, % of NIFTY (one dot a month)")
+    ax.set_ylabel("dynamic gamma hedge, % of NIFTY")
+    ax.set_title("Different months went wrong", fontsize=10.5)
+    fig.suptitle("A second option swapped one risk for another and cost the hedged profit",
+                 x=0.01, ha="left", fontsize=12.5, fontweight="semibold")
+    fig.tight_layout()
+    plots.save(fig, out_dir, "gamma")
+    plt.close(fig)
+    return res
+
+
 REPORTS: dict[str, Callable[[Path], dict]] = {
     "path": report_path,
     "hedge-vol": report_hedge_vol,
     "rebalance": report_rebalance,
     "gaps": report_gaps,
+    "gamma": report_gamma,
 }
