@@ -89,6 +89,9 @@ The simulator and the tests need no market data; the tests of the browser maths 
 - Conventions: time to expiry is calendar days / 365; rates are continuously compounded, a year;
   money is in rupees per unit of NIFTY and valued at expiry; the premium sits in cash earning the
   rate and futures need no money up front.
+- Data: NSE's daily F&O bhavcopy through implied-vol-surface's local data (NIFTY option closing
+  prices, forwards and SVI fits) and NIFTY's close from the NSE bhavcopy archive; read locally, never
+  committed. The page needs no data.
 - Charts: one validated palette; README charts are animated GIFs with a static fallback for
   reduced-motion users.
 
