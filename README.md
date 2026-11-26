@@ -162,24 +162,22 @@ nothing is fitted.
 
 <a href="docs/img/stocks.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/stocks.png"><img src="docs/img/stocks.gif" alt="Average and spread of monthly hedged P&L for NIFTY and single-stock at-the-money calls; average stock hedged P&L by the size of the month's largest one-day move" width="720"></picture></a>
 
-At each month-end, every F&O stock's monthly expiry 15–45 days out gives a forward (the stock
-future's settlement price) and an at-the-money strike (the one nearest it with a traded call and
-put); the call is sold at the mean of their implied volatilities (option closes, so a little out of
-step with the futures' settlement price) and hedged at every close with the stock's split-adjusted
-price, scaled to the forward, until expiry (carry over the month ignored, so the option also settles
-on the scaled price). Option symbols are mapped to the company's current symbol before prices are
+At each month-end, every F&O stock's monthly expiry 20–45 days out (as for NIFTY) gives a forward (the stock
+future's close) and an at-the-money strike (the one nearest it with a traded call and
+put); the call is sold at the mean of their implied volatilities (from closes, like the forward) and
+hedged at every close with the stock's split-adjusted price times the forward's carry, which runs off
+to expiry, so the option settles on the stock's own closing price. Option symbols are mapped to the company's current symbol before prices are
 looked up. Of 24,670 at-the-money cases on 377 stocks, 87 have no price history (6 stocks, including
 the failed JPPOWER and UNITECH) and 193 have prices missing on the start or expiry date, leaving
-24,390 stock-months on 141 month-ends (349 stocks). They are set against finding 1's NIFTY calls,
-whose expiry window is 20–45 days. Grouping months by their largest one-day move is done after the
+24,390 stock-months on 141 month-ends (349 stocks), set against finding 1's NIFTY calls. Grouping months by their largest one-day move is done after the
 fact, to see what drove the result.
 
 - **Stocks paid more per month.** Sold at a median 33.0% volatility (NIFTY 14.0%), 1.16 times what
   followed, the hedged stock call made +0.37% of the price a month (2015–2020 +0.43%, 2021–2026
   +0.33%) against +0.145% for NIFTY.
-- **With three times the risk.** The monthly spread was 1.42% against 0.454%, so the return per unit
+- **With three times the risk.** The monthly spread was 1.43% against 0.454%, so the return per unit
   of spread was lower (0.26 against 0.32); a third of months lost money in both.
-- **One big day decided the month.** In the 10% of stock-months with a one-day move over 8% the
+- **One big day decided the month.** In the 11% of stock-months with a one-day move over 8% the
   hedged call lost −1.17% on average; with the largest move under 3% it made +0.99%. The day-by-day
   gamma formula explained 68% of the stocks' monthly results, against 90% for NIFTY.
 

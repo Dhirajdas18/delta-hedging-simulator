@@ -51,11 +51,12 @@ def atm_cases(r=R) -> pd.DataFrame:
     rows = []
     for (d, sym), g in so.groupby(["date", "symbol"]):
         fut = g[g["type"] == "FUT"]
-        fut = fut[((fut["expiry"] - d).dt.days).between(15, 45)]
+        fut = fut[((fut["expiry"] - d).dt.days).between(20, 45)]  # as NIFTY (real.month_cases)
         if fut.empty:
             continue
         f = fut.sort_values("expiry").iloc[0]
-        exp, F0 = f["expiry"], float(f["settle"])
+        # closes for the forward and the options alike (option settle prices here are unreliable)
+        exp, F0 = f["expiry"], float(f["price"])
         o = g[(g["expiry"] == exp) & g["type"].isin(["CE", "PE"]) & (g["contracts"] > 0)
               & (g["price"] > 0.05)]
         both = o.pivot_table(index="strike", columns="type", values="price", aggfunc="last")
@@ -82,9 +83,11 @@ def hedge_months(cases: pd.DataFrame, r=R) -> pd.DataFrame:
     largest daily move."""
     names = current_symbols()
     cases = cases.assign(sym=cases["symbol"].map(lambda s: names.get(s, s)))
-    p = pd.read_parquet(lake_dir() / "panel.parquet", columns=["date", "symbol", "adj_close"])
+    p = pd.read_parquet(lake_dir() / "panel.parquet",
+                        columns=["date", "symbol", "close", "adj_close"])
     p = p[p["symbol"].isin(cases["sym"].unique())]
     px = p.pivot_table(index="date", columns="symbol", values="adj_close")
+    close = p.pivot_table(index="date", columns="symbol", values="close")
     out = []
     for c in cases.itertuples():
         if c.sym not in px:
@@ -92,8 +95,11 @@ def hedge_months(cases: pd.DataFrame, r=R) -> pd.DataFrame:
         s = px[c.sym].loc[c.date: c.expiry].dropna()
         if len(s) < 8 or s.index[0] != c.date or s.index[-1] != c.expiry:
             continue
-        F = c.F0 * (s / s.iloc[0]).to_numpy()
         t = ((s.index - c.date).days / 365).to_numpy()
+        # forward = spot x carry, the carry (from F0 over the day's unadjusted close) running off
+        # to expiry, so the option settles on the stock's own price
+        carry = math.log(c.F0 / float(close.at[c.date, c.sym])) / c.T
+        F = c.F0 * (s / s.iloc[0]).to_numpy() * np.exp(-carry * t)
         pnl, gsum, prem = hedge_path(F, t, c.K, c.T, r, c.vol, "call", float(F[-1]))
         lr = np.diff(np.log(F))
         out.append({"date": c.date, "symbol": c.sym, "vol": c.vol, "F0": c.F0,
