@@ -21,7 +21,7 @@ hedges; all computed in the browser.
 - [x] What the close can't hedge: overnight gaps and jumps
 - [x] Gamma hedging with a second option
 - [x] Hedging single-stock options against NIFTY
-- [ ] Is selling and hedging options an edge after costs and gaps
+- [x] Is selling and hedging options an edge after costs and gaps
 
 ## Findings
 
@@ -173,13 +173,37 @@ months by their largest one-day move is done after the fact, to see what drove t
   hedged call lost −1.17% on average; with the largest move under 3% it made +0.99%. The day-by-day
   gamma formula explained 68% of the stocks' monthly results, against 85% for NIFTY.
 
+### 7. Selling and hedging NIFTY options earned a thin profit after costs, with falls worth five years of it
+
+<a href="docs/img/verdict.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/verdict.png"><img src="docs/img/verdict.gif" alt="Running total of monthly P&L from selling and hedging a NIFTY at-the-money call and 95% put each month, before costs, after costs, and only in months when implied volatility was above recent volatility, 2015-2026" width="720"></picture></a>
+
+The findings put together: at each month-end from January 2015 to October 2026 (141), sell one
+at-the-money call and one 95% put at their implied volatility, hedge each with futures on finding 3's
+delta band (settings chosen on 2015–2020), and pay every Indian cost on the futures and on selling
+the options, plus half of an assumed 1-point option spread. Results are per unit of NIFTY, as % of the
+forward, so they are a return on the notional, not on the margin a broker would hold. 2021–2026 is
+out of sample for the band settings. One rule fixed in advance is also tried: sell only when the
+sold volatility is above NIFTY's last-20-day volatility.
+
+- **Before costs there was an edge.** The book made +0.186% of NIFTY a month (+2.24% a year), positive
+  in 74% of months, t 2.64.
+- **Costs took about two-fifths.** Futures hedging cost 0.059% a month and selling the options 0.012%;
+  after costs the book made +0.116% a month (+1.39% a year), t 1.62, positive in 71% of months. In
+  2021–2026 alone, +0.145% (t 1.78).
+- **A few months took years of it back.** The worst were −4.10% (February 2020, into the crash),
+  −3.11% (July 2015) and −2.96% (August 2019); the deepest fall in the running total was −6.77%, 4.9
+  years of the average profit.
+- **Waiting for rich volatility didn't help out of sample.** Selling only in the 68% of months when
+  implied was above recent volatility made +0.167% a month over all years (t 2.31) and cut the worst
+  fall to −4.69%, but its gain came in 2015–2020; in 2021–2026 it made +0.155% against +0.145%.
+
 ## Quick start
 
 ```bash
 uv sync
 uv run dhs report <topic>               # a study's numbers and charts -> out/
                                         # (topics: path, hedge-vol, rebalance, gaps,
-                                        #  gamma, stocks)
+                                        #  gamma, stocks, verdict)
 uv run python scripts/build_site.py     # hedging simulator -> site/index.html (code only, no data)
 uv run pytest
 ```
@@ -203,6 +227,8 @@ The simulator and the tests need no market data; the tests of the browser maths 
 - `src/dhs/stocks.py`: at-the-money implied volatility of every F&O stock at month-ends from the
   option and futures closes, current-symbol mapping, and the monthly sold-and-hedged calls on
   split-adjusted prices.
+- `src/dhs/verdict.py`: the combined book (call and put sold each month, band-hedged, all costs),
+  the rich-volatility rule, and summary statistics.
 - `src/dhs/sim.py`: the core maths in numpy (scipy only for the normal CDF): Black-76 price,
   delta, gamma and vega on a forward; forward paths as geometric Brownian motion with drift
   −σ²/2 in logs, with optional Merton jumps compensated so the forward stays a martingale; and

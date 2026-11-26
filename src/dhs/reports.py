@@ -503,6 +503,71 @@ def report_stocks(out_dir: Path) -> dict:
     return res
 
 
+def report_verdict(out_dir: Path) -> dict:
+    """Is selling and hedging NIFTY options an edge after costs and gaps? The book of dhs.verdict
+    (an at-the-money call and a 95% put sold each month, delta-band hedged with finding 3's
+    2015-2020 settings, all Indian costs and half of a 1-point option spread), before and after
+    costs, by half (2021-2026 out of sample for the band settings), and with a rule fixed in
+    advance: sell only when the sold volatility is above NIFTY's last-20-day volatility."""
+    from dhs.verdict import book, summary
+
+    res = {}
+    m = book()
+    res["book"] = (
+        f"{len(m)} months ({m.index.min():%b %Y}-{m.index.max():%b %Y}); costs a month "
+        f"{m['fut_cost'].mean():.3f}% of NIFTY for the futures hedge and "
+        f"{m['opt_cost'].mean():.3f}% "
+        f"for selling the two options; the rule sells in {m['premium_rich'].mean():.0%} of months"
+    )
+    keep = {}
+    for per, mask in (("all", m.index.year > 0), ("2015-2020", m.index.year <= 2020),
+                      ("2021-2026", m.index.year >= 2021)):
+        x = m[mask]
+        for lab, ser in (("before costs", x["gross"]), ("after costs", x["net"]),
+                         ("after costs, sell only when implied > last 20 days",
+                          x.loc[x["premium_rich"], "net"])):
+            s_ = summary(ser)
+            keep[(per, lab)] = s_
+            res[f"{per}, {lab}"] = (
+                f"{s_['n']} months: mean {s_['mean']:+.3f}% a month ({s_['annual']:+.2f}% a year), "
+                f"spread {s_['sd']:.3f}%, t {s_['t']:.2f}, positive {s_['pos']:.0%}, worst month "
+                f"{s_['worst']:+.2f}%, worst fall in the running total {s_['dd']:+.2f}%"
+            )
+    res["  worst months after costs"] = "; ".join(
+        f"{d:%b %Y} {v:+.2f}%" for d, v in m["net"].nsmallest(5).items())
+    a = keep[("all", "after costs")]
+    res["  worst fall against the average year"] = (
+        f"{-a['dd'] / a['annual']:.1f} years of the average profit")
+
+    fig, ax = plt.subplots(figsize=(10, 4.4))
+    run_g, run_n = m["gross"].cumsum(), m["net"].cumsum()
+    rich = m["net"].where(m["premium_rich"], 0.0).cumsum()
+    ax.axvspan(pd_ts("2021-01-01"), m.index.max(), color=plots.GRID, alpha=0.6, lw=0)
+    ax.plot(run_g.index, run_g, color=plots.MUTED, lw=1.6)
+    ax.plot(run_n.index, run_n, color=plots.COLORS["hedged"], lw=2.2)
+    ax.plot(rich.index, rich, color=plots.SERIES[3], lw=1.6)
+    plots.label_line_end(ax, run_g.index[-1], float(run_g.iloc[-1]), "before costs", plots.MUTED)
+    plots.label_line_end(ax, run_n.index[-1], float(run_n.iloc[-1]) - 2.0, "after costs",
+                         plots.COLORS["hedged"])
+    plots.label_line_end(ax, rich.index[-1], float(rich.iloc[-1]) + 1.6,
+                         "only when implied > recent", plots.SERIES[3])
+    ax.axhline(0, color=plots.TEXT_2, lw=0.8)
+    ax.text(pd_ts("2021-02-01"), ax.get_ylim()[1] * 0.92, "2021-2026: out of sample",
+            fontsize=9, color=plots.TEXT_2)
+    ax.set_ylabel("running total of monthly P&L,\n% of NIFTY (call + put each month)")
+    ax.set_title("Selling and hedging NIFTY options earned a thin profit with a few deep falls")
+    fig.tight_layout()
+    plots.save(fig, out_dir, "verdict")
+    plt.close(fig)
+    return res
+
+
+def pd_ts(s):
+    import pandas as pd
+
+    return pd.Timestamp(s)
+
+
 REPORTS: dict[str, Callable[[Path], dict]] = {
     "path": report_path,
     "hedge-vol": report_hedge_vol,
@@ -510,4 +575,5 @@ REPORTS: dict[str, Callable[[Path], dict]] = {
     "gaps": report_gaps,
     "gamma": report_gamma,
     "stocks": report_stocks,
+    "verdict": report_verdict,
 }
