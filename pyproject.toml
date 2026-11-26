@@ -1,0 +1,39 @@
+[project]
+name = "delta-hedging-simulator"
+version = "0.1.0"
+description = "Sell an option, hedge it with NIFTY futures and study the hedged P&L: the gamma decomposition, which volatility to hedge at, when to rebalance after costs, and what jumps do, with a live hedging simulator."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Dhirajdas18" }]
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.5",
+    "pillow>=13.0.0",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+dhs = "dhs.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "dhs"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
