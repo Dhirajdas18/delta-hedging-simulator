@@ -20,9 +20,12 @@
 <p class="note" id="hs-band-help">Delta band: with the band rule, you trade only when the futures you should hold differ from what you hold by more than this many units (0.05 = 5% of one unit of NIFTY).</p>
 <p class="note" id="hs-note" aria-live="polite"></p>
 <dl class="stat-grid" id="hs-stats"></dl>
-<h3>Hedged against unhedged</h3>
-<p class="note">How to read it: each bar counts the simulated paths whose profit or loss at expiry fell in that range. Orange is selling the option and doing nothing; blue is selling it and hedging. Hedging squeezes the wide orange spread into a narrow blue one; where the blue sits (above or below zero) comes mostly from the gap between the volatility you sold at and the one that happens. Hover over a bar for details.</p>
-<div id="hs-hist" class="sim-chart" role="img" aria-label="Histogram of profit or loss at expiry across simulated paths, hedged against unhedged"></div>
+<h3>Sold and hedged: profit or loss at expiry</h3>
+<p class="note">How to read it: each bar counts the simulated paths whose profit or loss at expiry fell in that range, after hedging and costs. Where the bars sit (above or below zero) comes mostly from the gap between the volatility you sold at and the one that happens; how wide they spread is what hedging couldn’t remove. Hover over a bar for details.</p>
+<div id="hs-hist" class="sim-chart" role="img" aria-label="Histogram of the hedged profit or loss at expiry across simulated paths"></div>
+<h3>Sold, not hedged (for comparison)</h3>
+<p class="note">The same option sold with no hedge: most paths keep the whole premium (the tall bar on the right) and a few lose many times more. Note the much wider scale than the chart above.</p>
+<div id="hs-bare" class="sim-chart short" role="img" aria-label="Histogram of the unhedged short option’s profit or loss at expiry across simulated paths"></div>
 <h3>The formula explains it</h3>
 <p class="note">How to read it: each dot is one path. Across is what a simple formula predicts the hedged profit should be from that path’s daily moves; up is what the simulated hedge actually made. Dots on the grey diagonal mean the formula was exactly right. A day with a big move costs the seller money and a quiet day earns it, in proportion to how sensitive the hedge was that day. Hover over a dot for the numbers.</p>
 <div id="hs-fit" class="sim-chart" role="img" aria-label="Scatter of each path’s hedged profit against the profit predicted by the gamma formula, with a 45 degree line"></div>
@@ -95,7 +98,7 @@ $js
     if (bad) {
       el("hs-note").textContent = bad;
       stats([]);
-      ["hs-hist", "hs-fit", "hs-paths"].forEach((id) => Plotly.purge(id));
+      ["hs-hist", "hs-bare", "hs-fit", "hs-paths"].forEach((id) => Plotly.purge(id));
       return;
     }
     const T = o.d / 365, r = o.r / 100, vs = o.vs / 100, vr = o.vr / 100, vh = o.vh / 100;
@@ -126,15 +129,23 @@ $js
 
     const t2 = css("--text-2"), ca = css("--accent"), cx = css("--accent-2"), surf = css("--surface");
     // Histogram: one bin width for both, fine enough to show the hedged spread.
-    const all = pnl.concat(bare), lo = Math.min(...all), hi = Math.max(...all);
-    const size = Math.max(s / 4, (hi - lo) / 400, 0.01);
-    const bins = { start: lo - size, end: hi + size, size };
+    // Each histogram on its own scale: the bare short's tail would squash the hedged spread.
+    const binsFor = (v) => {
+      const lo = Math.min(...v), hi = Math.max(...v), size = Math.max((hi - lo) / 60, 0.01);
+      return { start: lo - size, end: hi + size, size };
+    };
     const ht = (lab) => `${lab}<br>₹%{x} at expiry: %{y:.1f}% of paths<extra></extra>`;
     Plotly.react("hs-hist", [
-      { x: bare, type: "histogram", xbins: bins, histnorm: "percent", marker: { color: cx }, opacity: 0.6, name: "sold, not hedged", hovertemplate: ht("not hedged") },
-      { x: pnl, type: "histogram", xbins: bins, histnorm: "percent", marker: { color: ca }, opacity: 0.75, name: "sold and hedged", hovertemplate: ht("delta-hedged, after costs") },
-    ], Object.assign(base(), { barmode: "overlay", bargap: 0, legend: legendFor("hs-hist"), margin: marginFor("hs-hist"),
-      xaxis: axis("profit or loss at expiry, ₹ per unit of NIFTY", { tickformat: ",.0f" }),
+      { x: pnl, type: "histogram", xbins: binsFor(pnl), histnorm: "percent", marker: { color: ca }, name: "sold and hedged", hovertemplate: ht("delta-hedged, after costs") },
+    ], Object.assign(base(), { bargap: 0.05, showlegend: false, margin: marginFor("hs-hist"),
+      shapes: [{ type: "line", yref: "paper", x0: 0, x1: 0, y0: 0, y1: 1, line: { color: t2, width: 1, dash: "dash" } }],
+      xaxis: axis("hedged profit or loss at expiry, ₹ per unit of NIFTY", { tickformat: ",.0f" }),
+      yaxis: axis("share of paths, %") }), cfg);
+    Plotly.react("hs-bare", [
+      { x: bare, type: "histogram", xbins: binsFor(bare), histnorm: "percent", marker: { color: cx }, name: "sold, not hedged", hovertemplate: ht("not hedged") },
+    ], Object.assign(base(), { bargap: 0.05, showlegend: false, margin: marginFor("hs-bare"),
+      shapes: [{ type: "line", yref: "paper", x0: 0, x1: 0, y0: 0, y1: 1, line: { color: t2, width: 1, dash: "dash" } }],
+      xaxis: axis("unhedged profit or loss at expiry, ₹ per unit of NIFTY", { tickformat: ",.0f" }),
       yaxis: axis("share of paths, %") }), cfg);
 
     // Scatter: prediction against result, with the 45° line.
