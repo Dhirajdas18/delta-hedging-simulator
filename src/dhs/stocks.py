@@ -5,7 +5,7 @@ stock with a monthly expiry 15-45 days out: the forward F0 is the stock future's
 price; the at-the-money strike is the one nearest F0 with a traded call and put; the sold
 volatility is the mean of their Black-76 implied volatilities. A call at that strike is sold at
 that volatility and hedged at every close with the stock's price (split-adjusted closes from the
-the NSE bhavcopy archive, scaled to F0; carry over the month ignored) until expiry, settled on the expiry
+NSE archive, scaled to F0; carry over the month ignored) until expiry, settled on the expiry
 day's close. Option symbols are mapped to current NSE symbols (the archive files a company's
 history under its latest symbol) with the archive's symbol-change list.
 """

@@ -249,7 +249,7 @@ def report_rebalance(out_dir: Path) -> dict:
 
 def report_gaps(out_dir: Path) -> dict:
     """What a close-to-close hedge can't catch: NIFTY's overnight gaps (open against the previous
-    close, the NSE bhavcopy archive's index files, 2015-2026), their share of daily variance, the biggest
+    close, the archive's index files, 2015-2026), their share of daily variance, the biggest
     gap days; finding 1's months hedged at each close and also at each open; and a simulation of
     hedging more often with and without jumps."""
     import pandas as pd
